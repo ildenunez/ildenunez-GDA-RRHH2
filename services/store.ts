@@ -457,6 +457,18 @@ class Store {
     await this.refresh();
   }
   async deleteDriverPPE(id: string) { await supabase.from('drivers_ppe').delete().eq('id', id); await this.refresh(); }
+  async sendAdminNotification(message: string, userIds: string[]) {
+    const notifs = userIds.map(uid => ({
+        id: crypto.randomUUID(),
+        user_id: uid,
+        message,
+        read: false,
+        date: new Date().toISOString(),
+        type: 'admin'
+    }));
+    await supabase.from('notifications').insert(notifs);
+    await this.refresh();
+  }
   async repairOvertimeIntegrity() { await this.refresh(); }
 }
 

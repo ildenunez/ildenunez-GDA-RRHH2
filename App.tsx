@@ -165,6 +165,22 @@ export default function App() {
   const [reminderDismissed, setReminderDismissed] = useState(false);
 
   useEffect(() => {
+    // Force Inter Font with absolute priority
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@1..900&display=swap');
+      * {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-weight: 800 !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
     const initApp = async () => {
         try {
           await store.init();
@@ -248,7 +264,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen h-[100dvh] bg-[#F8FAFC] overflow-hidden font-sans selection:bg-brand-100 selection:text-brand-900">
-      <aside className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#2D32C1] transition-transform duration-500 md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col shadow-2xl print:hidden`}>
+      <aside className={`fixed top-0 bottom-0 left-0 z-50 w-52 bg-[#0F172A] transition-transform duration-500 md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col shadow-2xl print:hidden`}>
         <div className="p-8 flex flex-col items-center shrink-0">
             <div className="w-20 h-20 bg-white rounded-3xl p-3 flex items-center justify-center shadow-lg mb-4">
                <img src={LOGO_URL} className="w-full h-full object-contain" />
@@ -285,7 +301,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex-1 md:ml-64 flex flex-col h-screen h-[100dvh] relative transition-all duration-300">
+      <main className="flex-1 md:ml-52 flex flex-col h-screen h-[100dvh] relative transition-all duration-300">
         <header className="h-20 flex items-center justify-between px-10 z-30 shrink-0 print:hidden bg-[#F8FAFC]">
           <div className="flex items-center gap-6 flex-1">
             <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-3 text-slate-600 bg-white shadow-sm rounded-xl border border-slate-100"><Menu size={20}/></button>

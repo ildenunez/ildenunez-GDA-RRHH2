@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { store } from '../services/store';
 import { 
-    BarChart2, Activity, Target, Palmtree, Users, Settings, Plus, Trash2, Database, Download, Upload, Info, ShieldCheck, Mail, Megaphone, Server, Layout, Edit2, RotateCcw, Send, Lock, Loader2, Search, Save, X, UserCheck, ShieldAlert, Briefcase, Calendar, Clock, HardHat, Check, Minus, AlertCircle, Printer, AlertTriangle, Archive, ShoppingCart, List, History, RefreshCcw, Timer, ChevronRight
+    BarChart2, Activity, Target, Palmtree, Users, Settings, Plus, Trash2, Database, Download, Upload, Info, ShieldCheck, Mail, Megaphone, Server, Layout, Edit2, RotateCcw, Send, Lock, Loader2, Search, Save, X, UserCheck, ShieldAlert, Briefcase, Calendar, Clock, HardHat, Check, Minus, AlertCircle, Printer, AlertTriangle, Archive, ShoppingCart, List, History, RefreshCcw, Timer, ChevronRight, Bell
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Role, RequestStatus, RequestType, EmailTemplate, Department, Holiday, ShiftType, LeaveTypeConfig, PPEType } from '../types';
@@ -448,8 +448,17 @@ export const EPIManager = () => {
 
 // Gestión de Comunicaciones (Muro de anuncios, etc.)
 export const CommunicationsManager = () => {
+    // Muro
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
+    
+    // Notificaciones Directas
+    const [tab, setTab] = useState<'wall' | 'direct'>('wall');
+    const [directMsg, setDirectMsg] = useState('');
+    const [audience, setAudience] = useState<'all' | 'dept' | 'users'>('all');
+    const [targetDeptId, setTargetDeptId] = useState('');
+    const [targetUserIds, setTargetUserIds] = useState<string[]>([]);
+    
     const [isSaving, setIsSaving] = useState(false);
 
     const handleCreatePost = async () => {
@@ -461,45 +470,157 @@ export const CommunicationsManager = () => {
         setIsSaving(false);
     };
 
+    const handleSendDirect = async () => {
+        if (!directMsg.trim()) return;
+        setIsSaving(true);
+        
+        let uids: string[] = [];
+        if (audience === 'all') {
+            uids = store.users.map(u => u.id);
+        } else if (audience === 'dept') {
+            if (!targetDeptId) { setIsSaving(false); return; }
+            uids = store.users.filter(u => u.departmentId === targetDeptId).map(u => u.id);
+        } else {
+            if (targetUserIds.length === 0) { setIsSaving(false); return; }
+            uids = targetUserIds;
+        }
+
+        await store.sendAdminNotification(directMsg, uids);
+        setDirectMsg('');
+        setTargetUserIds([]);
+        setIsSaving(false);
+        alert(`Notificación enviada a ${uids.length} usuarios.`);
+    };
+
+    const toggleUserSelection = (uid: string) => {
+        setTargetUserIds(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
+    };
+
     return (
-        <div className="space-y-8 animate-fade-in">
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><Megaphone size={20} className="text-blue-500"/> Crear Comunicado en el Muro</h4>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Título del Anuncio</label>
-                        <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={title} onChange={e => setTitle(e.target.value)} placeholder="Ej: Nueva política de vestuario..." />
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Contenido del Mensaje</label>
-                        <textarea className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm h-32" value={content} onChange={e => setContent(e.target.value)} placeholder="Escribe aquí el mensaje para todos los empleados..." />
-                    </div>
-                    <button onClick={handleCreatePost} disabled={isSaving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 transition-all">
-                        {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
-                        Publicar Anuncio
-                    </button>
-                </div>
+        <div className="space-y-4 animate-fade-in pb-12">
+            <div className="flex gap-2 p-1 bg-slate-100 rounded-xl self-start mb-4">
+                <button 
+                    onClick={() => setTab('wall')} 
+                    className={`px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${tab === 'wall' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                    Muro de Anuncios
+                </button>
+                <button 
+                    onClick={() => setTab('direct')} 
+                    className={`px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${tab === 'direct' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                    Notificaciones Directas
+                </button>
             </div>
 
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><History size={20} className="text-slate-400"/> Historial de Anuncios</h4>
-                <div className="space-y-4">
-                    {store.config.news.length === 0 ? (
-                        <p className="text-center text-slate-400 italic py-4">No hay anuncios publicados.</p>
-                    ) : store.config.news.map(post => (
-                        <div key={post.id} className="flex justify-between items-start p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
-                            <div className="flex-1">
-                                <h5 className="font-bold text-slate-800">{post.title}</h5>
-                                <p className="text-xs text-slate-500 line-clamp-2 mt-1">{post.content}</p>
-                                <span className="text-[9px] font-bold text-slate-400 uppercase mt-2 block">{new Date(post.createdAt).toLocaleDateString()}</span>
+            {tab === 'wall' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm h-fit">
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><Megaphone size={20} className="text-blue-500"/> Crear Comunicado en el Muro</h4>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Título del Anuncio</label>
+                                <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={title} onChange={e => setTitle(e.target.value)} placeholder="Ej: Nueva política de vestuario..." />
                             </div>
-                            <button onClick={() => store.deleteNewsPost(post.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
-                                <Trash2 size={16}/>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Contenido del Mensaje</label>
+                                <textarea className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm h-32" value={content} onChange={e => setContent(e.target.value)} placeholder="Escribe aquí el mensaje para todos los empleados..." />
+                            </div>
+                            <button onClick={handleCreatePost} disabled={isSaving} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 transition-all">
+                                {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
+                                Publicar Anuncio
                             </button>
                         </div>
-                    ))}
+                    </div>
+
+                    <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><History size={20} className="text-slate-400"/> Historial de Anuncios</h4>
+                        <div className="space-y-4">
+                            {store.config.news.length === 0 ? (
+                                <p className="text-center text-slate-400 italic py-4">No hay anuncios publicados.</p>
+                            ) : store.config.news.map(post => (
+                                <div key={post.id} className="flex justify-between items-start p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
+                                    <div className="flex-1">
+                                        <h5 className="font-bold text-slate-800">{post.title}</h5>
+                                        <p className="text-xs text-slate-500 line-clamp-2 mt-1">{post.content}</p>
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase mt-2 block">{new Date(post.createdAt).toLocaleDateString()}</span>
+                                    </div>
+                                    <button onClick={() => store.deleteNewsPost(post.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+                                        <Trash2 size={16}/>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm h-fit">
+                        <div className="flex items-center justify-between mb-6">
+                            <h4 className="font-bold text-slate-800 flex items-center gap-2"><Bell size={20} className="text-indigo-500"/> Notificación Pop-up</h4>
+                            <span className="text-[9px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full font-black uppercase tracking-tighter">Aparece al abrir la App</span>
+                        </div>
+                        
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-3 ml-1">¿A quién quieres avisar?</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button onClick={() => setAudience('all')} className={`py-3 rounded-xl border text-[10px] font-black uppercase tracking-tighter transition-all ${audience === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Todos</button>
+                                    <button onClick={() => setAudience('dept')} className={`py-3 rounded-xl border text-[10px] font-black uppercase tracking-tighter transition-all ${audience === 'dept' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Departamento</button>
+                                    <button onClick={() => setAudience('users')} className={`py-3 rounded-xl border text-[10px] font-black uppercase tracking-tighter transition-all ${audience === 'users' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Seleccionar</button>
+                                </div>
+                            </div>
+
+                            {audience === 'dept' && (
+                                <div className="animate-fade-in">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Elegir Departamento</label>
+                                    <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={targetDeptId} onChange={e => setTargetDeptId(e.target.value)}>
+                                        <option value="">Selecciona un departamento...</option>
+                                        {store.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {audience === 'users' && (
+                                <div className="animate-fade-in">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Elegir Usuarios ({targetUserIds.length})</label>
+                                    <div className="max-h-48 overflow-y-auto border border-slate-100 rounded-2xl p-2 bg-slate-50 space-y-1">
+                                        {store.users.map(u => (
+                                            <label key={u.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer transition-colors">
+                                                <input type="checkbox" checked={targetUserIds.includes(u.id)} onChange={() => toggleUserSelection(u.id)} className="w-4 h-4 text-indigo-600 rounded border-slate-200" />
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-700">{u.name}</p>
+                                                    <p className="text-[9px] text-slate-400 font-bold uppercase">{store.departments.find(d => d.id === u.departmentId)?.name}</p>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Mensaje para el Pop-up</label>
+                                <textarea className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm h-32 focus:ring-2 focus:ring-indigo-100 outline-none transition-all" value={directMsg} onChange={e => setDirectMsg(e.target.value)} placeholder="Ej: Por favor, pasad por oficina para recoger los nuevos carnets..." />
+                            </div>
+
+                            <button onClick={handleSendDirect} disabled={isSaving} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-500/30 flex justify-center items-center gap-2 transition-all hover:bg-indigo-700 active:scale-[0.98]">
+                                {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
+                                Enviar Notificación Inmediata
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-8 rounded-3xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center">
+                        <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-4">
+                            <Megaphone size={30} />
+                        </div>
+                        <h4 className="font-bold text-slate-700 mb-2">Consejos de Comunicación</h4>
+                        <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
+                            Las **notificaciones directas** se muestran como un aviso emergente que el usuario debe marcar como leído. Utilízalas para avisos críticos o urgentes. Para información general, usa el **Muro de Anuncios**.
+                        </p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
