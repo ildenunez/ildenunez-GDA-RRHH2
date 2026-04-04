@@ -200,7 +200,7 @@ export interface AppConfig {
   };
   // Campos nuevos en la config
   trucks: Truck[];
-  drivers: any[];
-  driversPpe: PPERequest[];
+  drivers: Driver[];
+  driversPpe: DriverPPE[];
   dbError?: string;
 }
