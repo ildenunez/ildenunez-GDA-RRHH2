@@ -207,7 +207,7 @@ export default function App() {
   useEffect(() => {
     if (user && !unreadToModal) {
       const allNotifs = store.getNotificationsForUser(user.id);
-      const firstAdminUnread = allNotifs.find(n => !n.read && n.type === 'admin');
+      const firstAdminUnread = allNotifs.find(n => !n.read && (n.type === 'admin' || n.message.startsWith('[ADMIN]')));
       if (firstAdminUnread) {
         setUnreadToModal(firstAdminUnread);
       }

@@ -461,10 +461,9 @@ class Store {
     const notifs = userIds.map(uid => ({
         id: crypto.randomUUID(),
         user_id: uid,
-        message,
+        message: `[ADMIN] ${message}`,
         read: false,
-        date: new Date().toISOString(),
-        type: 'admin'
+        created_at: new Date().toISOString()
     }));
     await supabase.from('notifications').insert(notifs);
     await this.refresh();

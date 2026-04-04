@@ -34,7 +34,7 @@ const UnreadNotificationsModal: React.FC<UnreadNotificationsModalProps> = ({ not
           <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8 relative">
             <MessageSquareQuote size={40} className="absolute -top-4 -right-2 text-slate-200" />
             <p className="text-slate-700 leading-relaxed font-medium italic relative z-10">
-              "{notification.message}"
+              "{notification.message.replace('[ADMIN] ', '').replace('[ADMIN]', '')}"
             </p>
           </div>
 
