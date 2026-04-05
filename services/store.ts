@@ -1,5 +1,6 @@
 import { User, Role, Department, LeaveRequest, RequestStatus, AppConfig, Notification, LeaveTypeConfig, EmailTemplate, ShiftType, ShiftAssignment, Holiday, PPEType, PPERequest, RequestType, OvertimeUsage, DateRange, NewsPost, Truck, Driver, DriverPPE } from '../types';
 import { supabase } from './supabase';
+import { playNotificationSound } from './NotificationSound';
 
 class Store {
   users: User[] = [];
@@ -156,9 +157,33 @@ class Store {
         if (updatedSelf) this.currentUser = updatedSelf;
         const { data: n } = await supabase.from('notifications').select('*').eq('user_id', this.currentUser.id).order('created_at', { ascending: false });
         if (n) this.notifications = n.map((x: any) => ({ id: String(x.id), userId: String(x.user_id), message: x.message, read: x.read, date: x.created_at, type: x.type }));
+        
+        // Setup Realtime subscription
+        const channelName = `notifs_${this.currentUser.id}`;
+        if (!supabase.getChannels().find(c => c.topic === `realtime:${channelName}`)) {
+            supabase.channel(channelName)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${this.currentUser.id}` }, (payload) => {
+                const newNotif = payload.new;
+                this.notifications = [{ id: String(newNotif.id), userId: String(newNotif.user_id), message: newNotif.message, read: newNotif.read, date: newNotif.created_at, type: newNotif.type }, ...this.notifications];
+                playNotificationSound();
+                this.notify();
+            })
+            .subscribe();
+        }
       }
       this.notify();
     } catch (error) { console.error("Store Refresh Error:", error); }
+  }
+
+  async saveEmailTemplates(templates: EmailTemplate[]) {
+    try {
+      this.config.emailTemplates = templates;
+      await supabase.from('settings').upsert({ key: 'email_templates', value: templates }, { onConflict: 'key' });
+      await this.refresh();
+    } catch (e) {
+      console.error("Error saving email templates:", e);
+      throw e;
+    }
   }
 
   async init() {
@@ -460,9 +485,8 @@ class Store {
   async deletePPERequest(id: string) { await supabase.from('ppe_requests').delete().eq('id', id); await this.refresh(); }
   async createNewsPost(t: string, c: string, aid: string) { await supabase.from('news').insert({ id: crypto.randomUUID(), title: t, content: c, author_id: aid, created_at: new Date().toISOString() }); await this.refresh(); }
   async deleteNewsPost(id: string) { await supabase.from('news').delete().eq('id', id); await this.refresh(); }
-  async saveSmtpSettings(s: any) { await supabase.from('settings').update({ value: s }).eq('key', 'smtp'); await this.refresh(); }
-  async saveEmailTemplates(t: EmailTemplate[]) { await supabase.from('settings').update({ value: t }).eq('key', 'email_templates'); await this.refresh(); }
-  async createTruck(n: string) { await supabase.from('trucks').insert({ id: crypto.randomUUID(), name: n }); await this.refresh(); }
+    async saveSmtpSettings(s: any) { await supabase.from('settings').update({ value: s }).eq('key', 'smtp'); await this.refresh(); }
+    async createTruck(n: string) { await supabase.from('trucks').insert({ id: crypto.randomUUID(), name: n }); await this.refresh(); }
   async deleteTruck(id: string) { await supabase.from('trucks').delete().eq('id', id); await this.refresh(); }
   async createDriver(n: string, tid: string) { await supabase.from('drivers').insert({ id: crypto.randomUUID(), name: n, truck_id: tid }); await this.refresh(); }
   async deleteDriver(id: string) { await supabase.from('drivers').delete().eq('id', id); await this.refresh(); }

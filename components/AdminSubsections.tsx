@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { store } from '../services/store';
 import { 
-    BarChart2, Activity, Target, Palmtree, Users, Settings, Plus, Trash2, Database, Download, Upload, Info, ShieldCheck, Mail, Megaphone, Server, Layout, Edit2, RotateCcw, Send, Lock, Loader2, Search, Save, X, UserCheck, ShieldAlert, Briefcase, Calendar, Clock, HardHat, Check, Minus, AlertCircle, Printer, AlertTriangle, Archive, ShoppingCart, List, History, RefreshCcw, Timer, ChevronRight, Bell
+    BarChart2, Activity, Target, Palmtree, Users, Settings, Plus, Trash2, Database, Download, Upload, Info, ShieldCheck, Mail, Megaphone, Server, Layout, Edit2, RotateCcw, Send, Lock, Loader2, Search, Save, X, UserCheck, ShieldAlert, Briefcase, Calendar, Clock, HardHat, Check, Minus, AlertCircle, Printer, AlertTriangle, Archive, ShoppingCart, List, History, RefreshCcw, Timer, ChevronRight, ChevronDown, ChevronUp, Bell
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Role, RequestStatus, RequestType, EmailTemplate, Department, Holiday, ShiftType, LeaveTypeConfig, PPEType } from '../types';
@@ -9,36 +9,213 @@ import { supabase } from '../services/supabase';
 
 // Estadísticas Inteligentes
 export const AdminStats = () => {
-    const COLORS = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981'];
-    const deptDistribution = store.departments.map(d => ({
-        name: d.name,
-        value: store.users.filter(u => u.departmentId === d.id).length
-    })).filter(d => d.value > 0);
+    const COLORS = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899'];
+    const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState<number | 'all'>('all');
+    const [expandedDept, setExpandedDept] = useState<string | null>(null);
+    
+    const statsData = useMemo(() => {
+        const approved = store.requests.filter(r => r.status.toUpperCase() === RequestStatus.APPROVED);
+        const bajaTypeIds = store.config.leaveTypes.filter(t => t.label.toLowerCase().includes('baja')).map(t => t.id);
+        
+        const calculateDaysInRange = (reqStartStr: string, reqEndStr: string | undefined) => {
+            const rS = new Date(reqStartStr);
+            rS.setHours(0,0,0,0);
+            const rE = new Date(reqEndStr || reqStartStr);
+            rE.setHours(0,0,0,0);
+
+            let fS: Date, fE: Date;
+            if (selectedMonth === 'all') {
+                fS = new Date(selectedYear, 0, 1);
+                fE = new Date(selectedYear, 11, 31);
+            } else {
+                fS = new Date(selectedYear, selectedMonth as number, 1);
+                fE = new Date(selectedYear, (selectedMonth as number) + 1, 0);
+            }
+            fS.setHours(0,0,0,0);
+            fE.setHours(0,0,0,0);
+
+            const start = rS > fS ? rS : fS;
+            const end = rE < fE ? rE : fE;
+
+            if (start > end) return 0;
+            return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        };
+
+        const inPeriod = approved.filter(r => calculateDaysInRange(r.startDate, r.endDate) > 0);
+        const totalEmployees = store.users.length;
+        
+        const totalAbsenceDays = inPeriod.reduce((sum, r) => {
+            if (store.isOvertimeRequest(r.typeId)) return sum;
+            return sum + calculateDaysInRange(r.startDate, r.endDate);
+        }, 0);
+
+        const approvedBajas = inPeriod.filter(r => bajaTypeIds.includes(r.typeId));
+        const totalBajaDays = approvedBajas.reduce((sum, r) => sum + calculateDaysInRange(r.startDate, r.endDate), 0);
+        const avgBajaDuration = approvedBajas.length > 0 ? (totalBajaDays / approvedBajas.length).toFixed(1) : "0";
+
+        // Efficiency Calculation
+        const today = new Date().toISOString().split('T')[0];
+        const absentTodayCount = store.requests.filter(r => {
+            const status = (r.status || '').toUpperCase();
+            return status === RequestStatus.APPROVED && 
+                   !store.isOvertimeRequest(r.typeId) &&
+                   r.startDate <= today && (r.endDate || r.startDate) >= today;
+        }).length;
+        const efficiencyPerc = totalEmployees > 0 ? (((totalEmployees - absentTodayCount) / totalEmployees) * 100).toFixed(0) : "100";
+
+        const depts = store.departments.map(d => {
+            const deptUsers = store.users.filter(u => u.departmentId === d.id);
+            const userCount = deptUsers.length;
+            const deptReqs = inPeriod.filter(r => deptUsers.some(u => u.id === r.userId));
+            
+            const bajaDays = deptReqs.filter(r => bajaTypeIds.includes(r.typeId))
+                                     .reduce((sum, r) => sum + calculateDaysInRange(r.startDate, r.endDate), 0);
+            
+            const absenceDays = deptReqs.filter(r => !store.isOvertimeRequest(r.typeId))
+                                        .reduce((sum, r) => sum + calculateDaysInRange(r.startDate, r.endDate), 0);
+
+            const userDetails = deptUsers.map(u => ({
+                id: u.id,
+                name: u.name,
+                absences: deptReqs.filter(r => r.userId === u.id && !store.isOvertimeRequest(r.typeId))
+                                  .reduce((sum, r) => sum + calculateDaysInRange(r.startDate, r.endDate), 0),
+                bajas: deptReqs.filter(r => r.userId === u.id && bajaTypeIds.includes(r.typeId))
+                               .reduce((sum, r) => sum + calculateDaysInRange(r.startDate, r.endDate), 0)
+            })).sort((a,b) => (b.absences + b.bajas) - (a.absences + a.bajas));
+            
+            return {
+                id: d.id,
+                name: d.name,
+                users: userCount,
+                bajas: bajaDays,
+                absences: absenceDays,
+                employees: userDetails
+            };
+        }).filter(d => d.users > 0 || d.absences > 0);
+
+        return { totalEmployees, totalAbsences: totalAbsenceDays, totalBajas: totalBajaDays, avgBajaDuration, efficiencyPerc, depts };
+    }, [store.requests, store.users, store.config.leaveTypes, store.departments, selectedYear, selectedMonth]);
+
+    const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><Users size={20} className="text-blue-500"/> Distribución Plantilla</h4>
-                <div className="h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie data={deptDistribution} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value" label={({name, percent}) => `${name} ${(percent*100).toFixed(0)}%`}>
-                                {deptDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip />
-                        </PieChart>
-                    </ResponsiveContainer>
+        <div className="space-y-10 animate-fade-in pb-20">
+            {/* Filters Header */}
+            <div className="flex flex-wrap gap-4 items-center justify-between bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                <div className="flex items-center gap-4">
+                    <div className="bg-indigo-100 p-2 text-indigo-600 rounded-xl"><Activity size={20}/></div>
+                    <div><h3 className="font-bold text-slate-800">Panel de Control de Estadísticas</h3><p className="text-[10px] font-black text-slate-400 uppercase">Filtros temporales activos</p></div>
+                </div>
+                <div className="flex gap-2">
+                    <select className="bg-white border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-600 shadow-sm outline-none focus:ring-2 focus:ring-indigo-100" value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))}>
+                        {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <select className="bg-white border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-600 shadow-sm outline-none focus:ring-2 focus:ring-indigo-100" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}>
+                        <option value="all">Todo el año</option>
+                        {months.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                    </select>
                 </div>
             </div>
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><Activity size={20} className="text-red-500"/> Ausentismo Crítico</h4>
-                <div className="space-y-4">
-                    {store.departments.slice(0,4).map(d => (
-                        <div key={d.id}>
-                            <div className="flex justify-between text-xs font-bold uppercase mb-1"><span>{d.name}</span><span className="text-slate-400">85% Operatividad</span></div>
-                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div className="bg-blue-500 h-full" style={{width: '85%'}}></div></div>
-                        </div>
-                    ))}
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="bg-blue-50 text-blue-600 p-4 rounded-2xl"><Users size={24}/></div>
+                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Plantilla</p><p className="text-3xl font-black text-slate-800">{statsData.totalEmployees}</p></div>
+                </div>
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="bg-orange-50 text-orange-600 p-4 rounded-2xl"><Target size={24}/></div>
+                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Días Ausencias</p><p className="text-3xl font-black text-slate-800">{statsData.totalAbsences}d</p></div>
+                </div>
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="bg-red-50 text-red-600 p-4 rounded-2xl"><ShieldAlert size={24}/></div>
+                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Días de Baja</p><p className="text-3xl font-black text-slate-800">{statsData.totalBajas}d</p></div>
+                </div>
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="bg-emerald-50 text-emerald-600 p-4 rounded-2xl"><Timer size={24}/></div>
+                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Duración Media</p><p className="text-3xl font-black text-slate-800">{statsData.avgBajaDuration}d</p></div>
+                </div>
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="bg-indigo-50 text-indigo-600 p-4 rounded-2xl"><Activity size={24}/></div>
+                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">% Personal Efectivo</p><p className="text-3xl font-black text-slate-800">{statsData.efficiencyPerc}%</p></div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><BarChart2 size={20} className="text-blue-500"/> Personal por Departamento</h4>
+                    <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={statsData.depts}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 600}} />
+                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 600}} />
+                                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                                <Bar dataKey="users" name="Empleados" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><Briefcase size={20} className="text-slate-400"/> Desglose de Departamento (Clic para ver detalle días)</h4>
+                    <div className="flex-1 overflow-y-auto max-h-[400px] scrollbar-hide">
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase sticky top-0 z-10">
+                                <tr>
+                                    <th className="px-4 py-3">Departamento</th>
+                                    <th className="px-4 py-3 text-center">Empleados</th>
+                                    <th className="px-4 py-3 text-center">Bajas (d)</th>
+                                    <th className="px-4 py-3 text-center">Total Aus. (d)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {statsData.depts.map(d => (
+                                    <React.Fragment key={d.id}>
+                                        <tr 
+                                            onClick={() => setExpandedDept(expandedDept === d.id ? null : d.id)}
+                                            className={`hover:bg-slate-50 transition-all cursor-pointer ${expandedDept === d.id ? 'bg-slate-50/50' : ''}`}
+                                        >
+                                            <td className="px-4 py-4 font-bold text-slate-700 flex items-center gap-2">
+                                                {expandedDept === d.id ? <ChevronUp size={14} className="text-indigo-500"/> : <ChevronRight size={14} className="text-slate-300"/>}
+                                                {d.name}
+                                            </td>
+                                            <td className="px-4 py-4 text-center font-black text-slate-400">{d.users}</td>
+                                            <td className="px-4 py-4 text-center"><span className={`font-black ${d.bajas > 0 ? 'text-red-500 bg-red-50 px-2 py-0.5 rounded-lg' : 'text-slate-300'}`}>{d.bajas}d</span></td>
+                                            <td className="px-4 py-4 text-center font-black text-blue-500">{d.absences}d</td>
+                                        </tr>
+                                        {expandedDept === d.id && (
+                                            <tr className="bg-slate-50/30">
+                                                <td colSpan={4} className="px-8 py-0 border-l-4 border-indigo-500">
+                                                    <div className="max-h-60 overflow-y-auto">
+                                                        <table className="w-full text-left text-[10px]">
+                                                            <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-tighter">
+                                                                <tr>
+                                                                    <th className="px-4 py-2">Empleado</th>
+                                                                    <th className="px-4 py-2 text-center">Días Ausencia</th>
+                                                                    <th className="px-4 py-2 text-center">Días Baja</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-200 bg-white">
+                                                                {d.employees.map(u => (
+                                                                    <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors">
+                                                                        <td className="px-4 py-2.5 font-bold text-slate-800">{u.name}</td>
+                                                                        <td className="px-4 py-2.5 text-center font-black text-slate-400">{u.absences > 0 ? `${u.absences}d` : '-'}</td>
+                                                                        <td className="px-4 py-2.5 text-center font-black text-red-500">{u.bajas > 0 ? `${u.bajas}d` : '-'}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -453,13 +630,22 @@ export const CommunicationsManager = () => {
     const [content, setContent] = useState('');
     
     // Notificaciones Directas
-    const [tab, setTab] = useState<'wall' | 'direct'>('wall');
+    const [tab, setTab] = useState<'wall' | 'direct' | 'email'>('wall');
     const [directMsg, setDirectMsg] = useState('');
+    
+    // Plantillas
+    const [templates, setTemplates] = useState<EmailTemplate[]>(store.config.emailTemplates || []);
+    const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
+    
     const [audience, setAudience] = useState<'all' | 'dept' | 'users'>('all');
     const [targetDeptId, setTargetDeptId] = useState('');
     const [targetUserIds, setTargetUserIds] = useState<string[]>([]);
     
     const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        setTemplates(store.config.emailTemplates);
+    }, [store.config.emailTemplates]);
 
     const handleCreatePost = async () => {
         if (!title.trim() || !content.trim()) return;
@@ -492,6 +678,27 @@ export const CommunicationsManager = () => {
         alert(`Notificación enviada a ${uids.length} usuarios.`);
     };
 
+    const handleSaveTemplate = async () => {
+        if (!editingTemplate) return;
+        let newTemplates = [...templates];
+        const idx = newTemplates.findIndex(t => t.id === editingTemplate.id);
+        if (idx >= 0) {
+            newTemplates[idx] = editingTemplate;
+        } else {
+            newTemplates.push(editingTemplate);
+        }
+        
+        setIsSaving(true);
+        try {
+            await store.saveEmailTemplates(newTemplates);
+            setEditingTemplate(null);
+        } catch (e) {
+            alert("Error al guardar plantillas");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const toggleUserSelection = (uid: string) => {
         setTargetUserIds(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
     };
@@ -509,7 +716,13 @@ export const CommunicationsManager = () => {
                     onClick={() => setTab('direct')} 
                     className={`px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${tab === 'direct' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                    Notificaciones Directas
+                    Notificaciones Pop-up
+                </button>
+                <button 
+                    onClick={() => setTab('email')} 
+                    className={`px-6 py-2 rounded-lg text-xs font-black uppercase transition-all ${tab === 'email' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                    Plantillas de Email
                 </button>
             </div>
 
@@ -553,7 +766,7 @@ export const CommunicationsManager = () => {
                         </div>
                     </div>
                 </div>
-            ) : (
+            ) : tab === 'direct' ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm h-fit">
                         <div className="flex items-center justify-between mb-6">
@@ -567,7 +780,7 @@ export const CommunicationsManager = () => {
                                 <div className="grid grid-cols-3 gap-2">
                                     <button onClick={() => setAudience('all')} className={`py-3 rounded-xl border text-[10px] font-black uppercase tracking-tighter transition-all ${audience === 'all' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Todos</button>
                                     <button onClick={() => setAudience('dept')} className={`py-3 rounded-xl border text-[10px] font-black uppercase tracking-tighter transition-all ${audience === 'dept' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Departamento</button>
-                                    <button onClick={() => setAudience('users')} className={`py-3 rounded-xl border text-[10px] font-black uppercase tracking-tighter transition-all ${audience === 'users' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Seleccionar</button>
+                                    <button onClick={() => setAudience('users')} className={`py-3 rounded-xl border text-[10px) font-black uppercase tracking-tighter transition-all ${audience === 'users' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Seleccionar</button>
                                 </div>
                             </div>
 
@@ -618,6 +831,96 @@ export const CommunicationsManager = () => {
                         <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
                             Las **notificaciones directas** se muestran como un aviso emergente que el usuario debe marcar como leído. Utilízalas para avisos críticos o urgentes. Para información general, usa el **Muro de Anuncios**.
                         </p>
+                    </div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><Mail size={20} className="text-blue-500"/> Notificaciones por Email</h4>
+                        <div className="space-y-4">
+                            {templates.map(t => (
+                                <div key={t.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group">
+                                    <div>
+                                        <p className="font-bold text-slate-800">{t.label}</p>
+                                        <p className="text-[10px] text-slate-400 font-black uppercase">{t.subject}</p>
+                                    </div>
+                                    <button onClick={() => setEditingTemplate(t)} className="p-2 bg-white text-blue-600 rounded-xl shadow-sm opacity-0 group-hover:opacity-100 transition-all"><Edit2 size={16}/></button>
+                                </div>
+                            ))}
+                            <button 
+                                onClick={() => setEditingTemplate({ id: crypto.randomUUID(), label: 'Nueva Plantilla', subject: '', body: '', recipients: { worker: true, supervisor: false, admin: false } })}
+                                className="w-full py-3 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold text-xs flex justify-center items-center gap-2 hover:bg-slate-50 transition-all"
+                            >
+                                <Plus size={16}/> Añadir Nueva Plantilla
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        {editingTemplate ? (
+                            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6 animate-fade-in">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="font-bold text-slate-800">Editando: {editingTemplate.label}</h4>
+                                    <button onClick={() => setEditingTemplate(null)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                                </div>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Etiqueta de la Plantilla</label>
+                                        <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={editingTemplate.label} onChange={e => setEditingTemplate({...editingTemplate, label: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Asunto del Email</label>
+                                        <input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold" value={editingTemplate.subject} onChange={e => setEditingTemplate({...editingTemplate, subject: e.target.value})} placeholder="Ej: Su solicitud ha sido aprobada" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Cuerpo del Mensaje</label>
+                                        <textarea className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm h-48 focus:ring-2 focus:ring-blue-100 outline-none" value={editingTemplate.body} onChange={e => setEditingTemplate({...editingTemplate, body: e.target.value})} placeholder="Hola {{nombre}}, tu solicitud para {{fecha}} ha sido..." />
+                                        <p className="text-[9px] text-slate-400 mt-2 italic">Variables disponibles: {"{{nombre}}, {{fecha}}, {{estado}}, {{comentario}}"}</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-3 ml-1">¿Quién recibe este aviso?</label>
+                                        <div className="flex gap-4">
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <input type="checkbox" checked={editingTemplate.recipients.worker} onChange={e => setEditingTemplate({...editingTemplate, recipients: {...editingTemplate.recipients, worker: e.target.checked}})} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                                                <span className="text-xs font-bold text-slate-600">Empleado</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <input type="checkbox" checked={editingTemplate.recipients.supervisor} onChange={e => setEditingTemplate({...editingTemplate, recipients: {...editingTemplate.recipients, supervisor: e.target.checked}})} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                                                <span className="text-xs font-bold text-slate-600">Supervisor</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <input type="checkbox" checked={editingTemplate.recipients.admin} onChange={e => setEditingTemplate({...editingTemplate, recipients: {...editingTemplate.recipients, admin: e.target.checked}})} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                                                <span className="text-xs font-bold text-slate-600">Admin</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 pt-4">
+                                        <button onClick={() => {
+                                            if (confirm('¿Eliminar esta plantilla?')) {
+                                                const newT = templates.filter(t => t.id !== editingTemplate.id);
+                                                store.saveEmailTemplates(newT);
+                                                setEditingTemplate(null);
+                                            }
+                                        }} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-bold flex justify-center items-center gap-2 hover:bg-red-100 transition-all">
+                                            <Trash2 size={18}/> Eliminar
+                                        </button>
+                                        <button onClick={handleSaveTemplate} disabled={isSaving} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 hover:bg-blue-700 transition-all">
+                                            {isSaving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} Guardar Plantilla
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-slate-50 p-12 rounded-3xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center h-full min-h-[400px]">
+                                <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-6">
+                                    <Mail size={40} />
+                                </div>
+                                <h4 className="font-bold text-slate-800 mb-2">Configuración de Avisos</h4>
+                                <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
+                                    Selecciona una plantilla para editar su contenido o crea una nueva. Estos emails se enviarán automáticamente según el selector de destinatarios configurado.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

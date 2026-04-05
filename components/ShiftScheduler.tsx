@@ -25,6 +25,7 @@ const ShiftScheduler: React.FC<ShiftSchedulerProps> = ({ users: allUsers }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [savingMonth, setSavingMonth] = useState<string | null>(null);
   const [stagedChanges, setStagedChanges] = useState<Record<string, string>>({});
+  const [isDragging, setIsDragging] = useState(false);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -116,6 +117,24 @@ const ShiftScheduler: React.FC<ShiftSchedulerProps> = ({ users: allUsers }) => {
     if (getEffectiveShiftId(userId, dateStr) === typeId) return;
     setStagedChanges(prev => ({ ...prev, [key]: typeId }));
   };
+
+  const handleMouseDown = (userId: string, dateStr: string) => {
+    if (!selectedShiftId || savingMonth) return;
+    setIsDragging(true);
+    handleCellClick(userId, dateStr);
+  };
+
+  const handleMouseEnter = (userId: string, dateStr: string) => {
+    if (isDragging) {
+      handleCellClick(userId, dateStr);
+    }
+  };
+
+  useEffect(() => {
+    const handleMouseUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, []);
 
   const handleSaveMonth = async (monthKey: string, days: { dateStr: string }[]) => {
     const dayStrings = days.map(d => d.dateStr);
@@ -222,7 +241,13 @@ const ShiftScheduler: React.FC<ShiftSchedulerProps> = ({ users: allUsers }) => {
                           const isHoliday = store.config.holidays.some(h => h.date === d.dateStr);
                           
                           return (
-                            <div key={d.dateStr} onClick={() => handleCellClick(user.id, d.dateStr)} className={`border-b border-r border-slate-100 h-10 flex items-center justify-center cursor-pointer hover:bg-black/5 relative ${isStaged ? 'ring-2 ring-inset ring-blue-500 z-10' : ''} ${!shift && !overlayTxt && isHoliday ? 'bg-red-50/50' : ''}`} style={{ backgroundColor: shift?.color || undefined }}>
+                            <div 
+                              key={d.dateStr} 
+                              onMouseDown={() => handleMouseDown(user.id, d.dateStr)}
+                              onMouseEnter={() => handleMouseEnter(user.id, d.dateStr)}
+                              className={`border-b border-r border-slate-100 h-10 flex items-center justify-center cursor-pointer hover:bg-black/5 relative select-none ${isStaged ? 'ring-2 ring-inset ring-blue-500 z-10' : ''} ${!shift && !overlayTxt && isHoliday ? 'bg-red-50/50' : ''}`} 
+                              style={{ backgroundColor: shift?.color || undefined }}
+                            >
                               {isStaged && <div className="absolute top-0 right-0 w-2 h-2 bg-blue-500 rounded-bl-full border-b border-l border-white shadow-sm z-20"></div>}
                               {overlayTxt && (
                                 <div className="absolute inset-x-0 inset-y-1 mx-1 flex items-center justify-center bg-black/60 rounded-md shadow-sm backdrop-blur-[1px] pointer-events-none">
