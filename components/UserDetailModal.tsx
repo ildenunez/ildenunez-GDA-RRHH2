@@ -30,6 +30,8 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ user: initialUser, on
   const [birthdate, setBirthdate] = useState(user.birthdate || '');
   const [avatar, setAvatar] = useState(user.avatar || '');
   const [password, setPassword] = useState('');
+  const [initVacations, setInitVacations] = useState('22');
+  const [initOvertime, setInitOvertime] = useState('0');
   const [daysAdjust, setDaysAdjust] = useState('');
   const [hoursAdjust, setHoursAdjust] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
@@ -56,8 +58,8 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ user: initialUser, on
                 departmentId: deptId, 
                 birthdate: payloadBirthdate, 
                 avatar, 
-                daysAvailable: 22, 
-                overtimeHours: 0 
+                daysAvailable: parseFloat(initVacations) || 0, 
+                overtimeHours: parseFloat(initOvertime) || 0 
             };
             await store.createUser(data, password || 'pass123');
             onClose();
@@ -69,13 +71,11 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ user: initialUser, on
                 await store.createRequest({ typeId: RequestType.ADJUSTMENT_OVERTIME, startDate: new Date().toISOString(), hours: parseFloat(hoursAdjust), reason: adjustReason || 'Ajuste manual de horas (Admin)' }, user.id, RequestStatus.APPROVED, store.currentUser?.id);
             }
             
-            // ELIMINAMOS daysAvailable y overtimeHours del payload para evitar sobreescrituras accidentales
             const updatePayload = { 
                 name, 
                 email, 
                 role, 
                 departmentId: deptId, 
-                department_id: deptId, 
                 birthdate: payloadBirthdate, 
                 avatar, 
                 password: password.trim() || undefined
@@ -169,6 +169,18 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ user: initialUser, on
                         <input type="password" placeholder="Dejar en blanco para mantener actual" className="w-full pl-10 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" value={password} onChange={e=>setPassword(e.target.value)} />
                     </div>
                     </div>
+                    {isNew && (
+                        <>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Vacaciones Iniciales (Días)</label>
+                                <input type="number" step="0.5" className="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl font-bold text-blue-700 outline-none focus:bg-white" value={initVacations} onChange={e=>setInitVacations(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 ml-1">Horas Iniciales (Horas)</label>
+                                <input type="number" step="0.5" className="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl font-bold text-blue-700 outline-none focus:bg-white" value={initOvertime} onChange={e=>setInitOvertime(e.target.value)} />
+                            </div>
+                        </>
+                    )}
                 </div>
             </section>
             {!isNew && (

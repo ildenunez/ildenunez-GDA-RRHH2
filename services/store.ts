@@ -38,8 +38,8 @@ class Store {
   private mapUser(u: any): User {
     return {
       ...u,
-      id: String(u.id),
-      departmentId: String(u.department_id),
+      id: String(u.id).trim(),
+      departmentId: String(u.department_id).trim(),
       daysAvailable: Number(u.days_available ?? 0),
       overtimeHours: Number(u.overtime_hours ?? 0),
       avatar: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || 'U')}`,
@@ -117,7 +117,7 @@ class Store {
 
       this.users = u.map((x: any) => this.mapUser(x));
       this.departments = d.map((x: any) => ({
-        id: String(x.id), name: String(x.name || ''), supervisorIds: (x.supervisor_ids || []).map((id: any) => String(id))
+        id: String(x.id).trim(), name: String(x.name || ''), supervisorIds: (x.supervisor_ids || []).map((id: any) => String(id).trim())
       }));
       this.requests = r.map((r: any) => ({
         id: String(r.id).trim(), userId: String(r.user_id).trim(), typeId: String(r.type_id).trim(), label: r.label,
@@ -412,10 +412,28 @@ class Store {
     return null;
   }
   logout() { this.currentUser = null; localStorage.removeItem('gda_session'); this.notify(); }
-  async createUser(d: any, p: string) { await supabase.from('users').insert({ id: crypto.randomUUID(), ...d, department_id: d.departmentId, password: p }); await this.refresh(); }
+  async createUser(d: any, p: string) { 
+    const { departmentId, daysAvailable, overtimeHours, ...rest } = d;
+    const { error } = await supabase.from('users').insert({ 
+      id: crypto.randomUUID(), 
+      ...rest, 
+      department_id: departmentId, 
+      days_available: daysAvailable || 22,
+      overtime_hours: overtimeHours || 0,
+      password: p 
+    }); 
+    if (error) throw error;
+    await this.refresh(); 
+  }
   async updateUserAdmin(id: string, d: any) { 
     const { departmentId, daysAvailable, overtimeHours, ...rest } = d; 
-    await supabase.from('users').update({ ...rest, department_id: departmentId }).eq('id', id); 
+    const { error } = await supabase.from('users').update({ 
+      ...rest, 
+      department_id: departmentId,
+      days_available: daysAvailable,
+      overtime_hours: overtimeHours
+    }).eq('id', id); 
+    if (error) throw error;
     await this.refresh(); 
   }
   async updateUserProfile(id: string, d: any) { await supabase.from('users').update(d).eq('id', id); await this.refresh(); }

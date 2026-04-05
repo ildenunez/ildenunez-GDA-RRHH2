@@ -72,10 +72,11 @@ const ShiftScheduler: React.FC<ShiftSchedulerProps> = ({ users: allUsers }) => {
   const getOverlayForDate = (userId: string, dateStr: string) => {
     // Buscar todas las solicitudes que coincidan con el usuario y la fecha, omitiendo ajustes
     const userReqs = store.requests.filter(r => {
-        if (String(r.userId).trim().toLowerCase() !== String(userId).trim().toLowerCase()) return false;
+        if (String(r.userId).trim() !== String(userId).trim()) return false;
         
         const status = (r.status || '').toUpperCase();
-        if (status !== RequestStatus.APPROVED && status !== RequestStatus.PENDING) return false;
+        if (status !== 'APROBADO' && status !== 'PENDIENTE') return false;
+        
         if (r.typeId === RequestType.ADJUSTMENT_DAYS || r.typeId === RequestType.ADJUSTMENT_OVERTIME) return false;
         
         // Normalizar fechas para comparación (YYYY-MM-DD)
@@ -88,9 +89,9 @@ const ShiftScheduler: React.FC<ShiftSchedulerProps> = ({ users: allUsers }) => {
     if (userReqs.length === 0) return null;
 
     // Priorizar: 1. Aprobadas, 2. Pendientes
-    const req = userReqs.find(r => (r.status || '').toUpperCase() === RequestStatus.APPROVED) || userReqs[0];
+    const req = userReqs.find(r => (r.status || '').toUpperCase() === 'APROBADO') || userReqs[0];
 
-    if ((req.status || '').toUpperCase() === RequestStatus.PENDING) return 'PTE';
+    if ((req.status || '').toUpperCase() === 'PENDIENTE') return 'PTE';
 
     const typeObj = store.config.leaveTypes.find(t => t.id === req.typeId);
     const lbl = (req.label || (typeObj ? typeObj.label : '')).toLowerCase();
@@ -152,7 +153,10 @@ const ShiftScheduler: React.FC<ShiftSchedulerProps> = ({ users: allUsers }) => {
             <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 3, 1))} className="p-2 hover:bg-slate-50 rounded-lg text-slate-600"><ChevronLeft size={20} /></button>
             <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 3, 1))} className="p-2 hover:bg-slate-50 rounded-lg text-slate-600"><ChevronRight size={20} /></button>
           </div>
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Planificación Plantilla</h2>
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter flex items-center gap-2">
+            Planificación Plantilla
+            <span className="bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full text-[9px] font-black">{store.requests.length} REQS</span>
+          </h2>
         </div>
         <div className="flex items-center gap-3">
           <select className="pl-4 pr-10 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white outline-none" value={selectedDept} onChange={e => setSelectedDept(e.target.value)}>
