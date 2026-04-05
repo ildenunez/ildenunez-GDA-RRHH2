@@ -120,10 +120,10 @@ class Store {
         id: String(x.id), name: String(x.name || ''), supervisorIds: (x.supervisor_ids || []).map((id: any) => String(id))
       }));
       this.requests = r.map((r: any) => ({
-        id: String(r.id), userId: String(r.user_id), typeId: String(r.type_id), label: r.label,
-        startDate: r.start_date, endDate: r.end_date, hours: r.hours, reason: r.reason,
-        status: r.status, createdAt: r.created_at, adminComment: r.admin_comment,
-        resolvedBy: r.resolved_by ? String(r.resolved_by) : undefined,
+        id: String(r.id).trim(), userId: String(r.user_id).trim(), typeId: String(r.type_id).trim(), label: r.label,
+        startDate: (r.start_date || '').trim(), endDate: (r.end_date || '').trim(), hours: r.hours, reason: r.reason,
+        status: (r.status || '').trim(), createdAt: r.created_at, adminComment: r.admin_comment,
+        resolvedBy: r.resolved_by ? String(r.resolved_by).trim() : undefined,
         consumedHours: Number(r.consumed_hours || 0), overtimeUsage: r.overtime_usage || []
       }));
       this.config.news = nw.map((n: any) => ({

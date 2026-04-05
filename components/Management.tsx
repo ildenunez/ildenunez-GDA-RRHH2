@@ -21,11 +21,12 @@ export const AdminSettings = ({ onViewRequest }: { onViewRequest: (req: LeaveReq
     const stats = useMemo(() => {
         const total = store.users.length;
         const today = new Date().toISOString().split('T')[0];
-        const absentToday = store.requests.filter((r: LeaveRequest) => 
-            r.status === RequestStatus.APPROVED && 
-            !store.isOvertimeRequest(r.typeId) &&
-            r.startDate <= today && (r.endDate || r.startDate) >= today
-        ).length;
+        const absentToday = store.requests.filter((r: LeaveRequest) => {
+            const status = (r.status || '').toUpperCase();
+            return status === RequestStatus.APPROVED && 
+                   !store.isOvertimeRequest(r.typeId) &&
+                   r.startDate <= today && (r.endDate || r.startDate) >= today;
+        }).length;
         const perc = total > 0 ? ((absentToday / total) * 100).toFixed(1) : "0";
         return { total, absentToday, perc };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -479,8 +480,12 @@ const PrintMonth: React.FC<PrintMonthProps> = ({ date, requests, deptId }) => {
                                             const typeId = String(absence.typeId);
                                             const isBaja = typeId === RequestType.SICKNESS || typeId.includes('baja');
                                             const isDL = typeId === RequestType.OVERTIME_SPEND_DAYS;
+                                            const isPending = absence.status === RequestStatus.PENDING;
 
-                                            if (isBaja) {
+                                            if (isPending) {
+                                                bgColor = '#f8fafc';
+                                                cellContent = 'PTE';
+                                            } else if (isBaja) {
                                                 bgColor = '#ef4444';
                                                 cellContent = 'B';
                                             } else if (isDL) {
@@ -537,11 +542,12 @@ export const UpcomingAbsences = ({ user, onViewRequest }: { user: User, onViewRe
         const yearStart = `${currentYear}-01-01`;
         const yearEnd = `${currentYear}-12-31`;
 
-        let list = store.requests.filter((r: LeaveRequest) => 
-            (r.status === RequestStatus.APPROVED || r.status === RequestStatus.PENDING) && 
-            (!store.isOvertimeRequest(r.typeId) || r.typeId === RequestType.OVERTIME_SPEND_DAYS) && 
-            (r.startDate <= yearEnd && (r.endDate || r.startDate) >= yearStart)
-        );
+        let list = store.requests.filter((r: LeaveRequest) => {
+            const status = (r.status || '').toUpperCase();
+            return (status === RequestStatus.APPROVED || status === RequestStatus.PENDING) && 
+                   (!store.isOvertimeRequest(r.typeId) || r.typeId === RequestType.OVERTIME_SPEND_DAYS) && 
+                   (r.startDate <= yearEnd && (r.endDate || r.startDate) >= yearStart);
+        });
         if (user.role === Role.SUPERVISOR) {
             const myDeptIds = allowedDepts.map(d => d.id);
             list = list.filter((r: LeaveRequest) => {
@@ -826,17 +832,20 @@ export const UpcomingAbsences = ({ user, onViewRequest }: { user: User, onViewRe
                                                                         const typeId = String(absence.typeId);
                                                                         const isBaja = typeId === RequestType.SICKNESS || typeId.includes('baja');
                                                                         const isDL = typeId === RequestType.OVERTIME_SPEND_DAYS;
-                                                                        const isPending = absence.status === RequestStatus.PENDING;
+                                                                        const isPending = (absence.status || '').toUpperCase() === RequestStatus.PENDING;
 
-                                                                        if (isBaja) {
-                                                                            bgColor = isPending ? '#fecaca' : '#ef4444';
+                                                                        if (isPending) {
+                                                                            bgColor = '#f3f4f6';
+                                                                            cellContent = <span className="text-[8px] font-black text-slate-400">PTE</span>;
+                                                                        } else if (isBaja) {
+                                                                            bgColor = '#ef4444';
                                                                             cellContent = <span className="text-[8px] font-black text-white">B</span>;
                                                                         } else if (isDL) {
-                                                                            bgColor = isPending ? '#bfdbfe' : '#3b82f6';
+                                                                            bgColor = '#3b82f6';
                                                                             cellContent = <span className="text-[8px] font-black text-white">DL</span>;
                                                                         } else {
-                                                                            bgColor = isPending ? '#f3f4f6' : '#dcfce7';
-                                                                            cellContent = <span className={`text-[8px] font-black ${isPending ? 'text-slate-400' : 'text-green-700'}`}>VAC</span>;
+                                                                            bgColor = '#dcfce7';
+                                                                            cellContent = <span className="text-[8px] font-black text-green-700">VAC</span>;
                                                                         }
                                                                     } else if (d.isWeekend) {
                                                                         bgColor = '#f8fafc';

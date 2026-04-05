@@ -100,9 +100,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
     } else {
         teamShifts = usersInScope.map(u => {
             const hasAbsence = requests.some(r => {
-                const start = r.startDate.split('T')[0];
-                const end = r.endDate ? r.endDate.split('T')[0] : start;
-                return r.userId === u.id && r.status === RequestStatus.APPROVED && dateStr >= start && dateStr <= end;
+                const start = r.startDate.split('T')[0].trim();
+                const end = (r.endDate || r.startDate).split('T')[0].trim();
+                const status = (r.status || '').toUpperCase();
+                return String(r.userId).trim() === String(u.id).trim() && status === RequestStatus.APPROVED && dateStr >= start && dateStr <= end;
             });
             if (hasAbsence) return null;
             const s = store.getShiftForUserDate(u.id, dateStr);
@@ -120,7 +121,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
       for(let i = 1; i <= daysInMonth; i++) {
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
           const activeRequests = requests.filter(req => {
-              if ((req.status !== RequestStatus.APPROVED && req.status !== RequestStatus.PENDING)) return false;
+              const status = (req.status || '').toUpperCase();
+              if (status !== RequestStatus.APPROVED && status !== RequestStatus.PENDING) return false;
               const start = req.startDate.split('T')[0];
               const end = req.endDate ? req.endDate.split('T')[0] : start;
               return dateStr >= start && dateStr <= end;
@@ -131,7 +133,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
               if (u && u.departmentId) {
                   if (!deptMap[u.departmentId]) deptMap[u.departmentId] = [];
                   if (!deptMap[u.departmentId].includes(u.name)) {
-                      deptMap[u.departmentId].push(`${u.name} (${req.status === RequestStatus.PENDING ? '?' : 'OK'})`);
+                      const status = (req.status || '').toUpperCase();
+                      deptMap[u.departmentId].push(`${u.name} (${status === RequestStatus.PENDING ? '?' : 'OK'})`);
                   }
               }
           });
@@ -181,8 +184,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
                 const day = i + 1;
                 const { absences, shift, teamShifts, holiday } = getEventsForDay(day);
                 const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
-                const approvedAbsence = absences.find(a => a.status === RequestStatus.APPROVED);
-                const pendingAbsence = absences.find(a => a.status === RequestStatus.PENDING);
+                const approvedAbsence = absences.find(a => (a.status || '').toUpperCase() === RequestStatus.APPROVED);
+                const pendingAbsence = absences.find(a => (a.status || '').toUpperCase() === RequestStatus.PENDING);
                 return (
                 <div key={day} className={`min-h-[120px] xl:min-h-[100px] border rounded-xl p-2 xl:p-1.5 transition-all hover:shadow-lg flex flex-col relative overflow-hidden group ${holiday ? 'bg-red-50 border-red-200' : isToday ? 'bg-white ring-2 ring-blue-400 border-blue-200 shadow-md transform scale-[1.02]' : 'bg-white border-slate-100'}`}>
                     <div className={`text-sm xl:text-xs font-bold mb-1 z-10 ${holiday ? 'text-red-600' : isToday ? 'text-blue-600' : 'text-slate-400'}`}>{day}</div>
@@ -195,7 +198,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
                                     return (
                                         <div key={ev.id + idx} className={`text-[9px] px-1.5 py-1 rounded-lg border-l-4 flex items-center gap-2 shadow-sm ${ev.status === RequestStatus.APPROVED ? 'bg-green-50 text-green-700 border-green-500' : ev.status === RequestStatus.PENDING ? 'bg-yellow-50 text-yellow-700 border-yellow-500' : 'bg-red-50 text-red-700 border-red-500 line-through opacity-60'}`} title={`${u?.name}: ${formatLabel(ev)}`}>
                                             <img src={u?.avatar} className="w-4 h-4 rounded-full object-cover shrink-0" />
-                                            <span className="truncate"><strong>{u?.name.split(' ')[0]}</strong>: {formatLabel(ev)}</span>
+                                            <span className="truncate"><strong>{u?.name.split(' ')[0]}</strong>: {(ev.status || '').toUpperCase() === RequestStatus.PENDING ? 'PTE' : formatLabel(ev)}</span>
                                         </div>
                                     );
                                 })}
@@ -236,7 +239,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
                                 {!holiday && !approvedAbsence && !shift && absences.length > 0 && (
                                      <div className="w-full h-full space-y-1 flex flex-col justify-center">
                                         {absences.map((ev, idx) => (
-                                            <div key={ev.id + idx} className={`text-[9px] px-2 py-1.5 rounded-lg border flex flex-col items-center justify-center text-center gap-1 h-full ${ev.status === RequestStatus.PENDING ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-red-50 text-red-700 border-red-200 opacity-60'}`} title={formatLabel(ev)}>{ev.status === RequestStatus.PENDING && <Clock size={14} className="text-yellow-600"/>}{ev.status === RequestStatus.REJECTED && <AlertTriangle size={14} className="text-red-600"/>}<span className="font-bold leading-tight line-clamp-2">{formatLabel(ev)}</span></div>
+                                            <div key={ev.id + idx} className={`text-[9px] px-2 py-1.5 rounded-lg border flex flex-col items-center justify-center text-center gap-1 h-full ${(ev.status || '').toUpperCase() === RequestStatus.PENDING ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-red-50 text-red-700 border-red-200 opacity-60'}`} title={formatLabel(ev)}>{(ev.status || '').toUpperCase() === RequestStatus.PENDING && <Clock size={14} className="text-yellow-600"/>}{(ev.status || '').toUpperCase() === RequestStatus.REJECTED && <AlertTriangle size={14} className="text-red-600"/>}<span className="font-bold leading-tight line-clamp-2">{(ev.status || '').toUpperCase() === RequestStatus.PENDING ? 'PTE' : formatLabel(ev)}</span></div>
                                         ))}
                                      </div>
                                 )}

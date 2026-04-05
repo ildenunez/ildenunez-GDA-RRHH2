@@ -70,15 +70,27 @@ const ShiftScheduler: React.FC<ShiftSchedulerProps> = ({ users: allUsers }) => {
   };
 
   const getOverlayForDate = (userId: string, dateStr: string) => {
-    const req = store.requests.find(r => {
-        if (r.userId !== userId || r.status !== RequestStatus.APPROVED) return false;
+    // Buscar todas las solicitudes que coincidan con el usuario y la fecha, omitiendo ajustes
+    const userReqs = store.requests.filter(r => {
+        if (String(r.userId).trim().toLowerCase() !== String(userId).trim().toLowerCase()) return false;
+        
+        const status = (r.status || '').toUpperCase();
+        if (status !== RequestStatus.APPROVED && status !== RequestStatus.PENDING) return false;
         if (r.typeId === RequestType.ADJUSTMENT_DAYS || r.typeId === RequestType.ADJUSTMENT_OVERTIME) return false;
         
-        const start = (r.startDate || '').split('T')[0];
-        const end = (r.endDate || r.startDate || '').split('T')[0];
-        return start <= dateStr && end >= dateStr;
+        // Normalizar fechas para comparación (YYYY-MM-DD)
+        const start = (r.startDate || '').split('T')[0].trim();
+        const end = (r.endDate || r.startDate || '').split('T')[0].trim();
+        
+        return dateStr >= start && dateStr <= end;
     });
-    if (!req) return null;
+
+    if (userReqs.length === 0) return null;
+
+    // Priorizar: 1. Aprobadas, 2. Pendientes
+    const req = userReqs.find(r => (r.status || '').toUpperCase() === RequestStatus.APPROVED) || userReqs[0];
+
+    if ((req.status || '').toUpperCase() === RequestStatus.PENDING) return 'PTE';
 
     const typeObj = store.config.leaveTypes.find(t => t.id === req.typeId);
     const lbl = (req.label || (typeObj ? typeObj.label : '')).toLowerCase();
