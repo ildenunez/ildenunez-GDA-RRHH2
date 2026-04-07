@@ -50,6 +50,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
       filteredReqs = filteredReqs.filter(r => {
            if (r.typeId === RequestType.WORKED_HOLIDAY) return true;
            if (r.typeId === RequestType.OVERTIME_SPEND_DAYS) return true;
+           if (r.typeId === RequestType.FREE_HOURS) return true;
            if (store.isOvertimeRequest(r.typeId)) return false;
            return true;
       });
@@ -77,10 +78,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
       if (lower.includes('baja') || lower.includes('medica')) return <Thermometer size={18} className="opacity-80"/>;
       if (lower.includes('asuntos')) return <UserIcon size={18} className="opacity-80"/>;
       if (lower.includes('justifi') || lower.includes('unjustified')) return <AlertTriangle size={18} className="opacity-80"/>;
+      if (lower.includes('horas libres') || lower === 'hl') return <Clock size={18} className="opacity-80"/>;
       return <Star size={18} className="opacity-80"/>;
   };
 
-  const formatLabel = (req: { typeId: string, label: string }) => store.getTypeLabel(req.typeId);
+  const formatLabel = (req: { typeId: string, label: string, status?: string }) => {
+      if (req.typeId === RequestType.FREE_HOURS && req.status === RequestStatus.APPROVED) return 'HL';
+      return store.getTypeLabel(req.typeId);
+  };
 
   const getEventsForDay = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -195,10 +200,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
                                 {holiday && <div className="text-[10px] font-bold text-red-600 uppercase mb-1 flex items-center gap-1 justify-center bg-red-100/50 rounded p-1"><Star size={10} fill="currentColor"/> {holiday.name}</div>}
                                 {absences.map((ev, idx) => {
                                     const u = store.users.find(usr => usr.id === ev.userId);
+                                    const isFreeHours = ev.typeId === RequestType.FREE_HOURS;
                                     return (
-                                        <div key={ev.id + idx} className={`text-[9px] px-1.5 py-1 rounded-lg border-l-4 flex items-center gap-2 shadow-sm ${ev.status === RequestStatus.APPROVED ? 'bg-green-50 text-green-700 border-green-500' : ev.status === RequestStatus.PENDING ? 'bg-yellow-50 text-yellow-700 border-yellow-500' : 'bg-red-50 text-red-700 border-red-500 line-through opacity-60'}`} title={`${u?.name}: ${formatLabel(ev)}`}>
+                                        <div key={ev.id + idx} className={`text-[9px] px-1.5 py-1 rounded-lg border-l-4 flex items-center gap-2 shadow-sm ${ev.status === RequestStatus.APPROVED ? (isFreeHours ? 'bg-teal-50 text-teal-700 border-teal-500' : 'bg-green-50 text-green-700 border-green-500') : ev.status === RequestStatus.PENDING ? 'bg-yellow-50 text-yellow-700 border-yellow-500' : 'bg-red-50 text-red-700 border-red-500 line-through opacity-60'}`} title={`${u?.name}: ${formatLabel(ev)}`}>
                                             <img src={u?.avatar} className="w-4 h-4 rounded-full object-cover shrink-0" />
-                                            <span className="truncate"><strong>{u?.name.split(' ')[0]}</strong>: {(ev.status || '').toUpperCase() === RequestStatus.PENDING ? 'PTE' : formatLabel(ev)}</span>
+                                            <span className="truncate"><strong>{u?.name.split(' ')[0]}</strong>: {(ev.status || '').toUpperCase() === RequestStatus.PENDING ? 'PTE' : (isFreeHours && ev.status === RequestStatus.APPROVED ? 'HL' : formatLabel(ev))}</span>
                                         </div>
                                     );
                                 })}
@@ -223,9 +229,25 @@ const CalendarView: React.FC<CalendarViewProps> = ({ user }) => {
                                     </div>
                                 )}
                                 {!holiday && approvedAbsence && (
-                                    <div className="w-full h-full bg-green-50 rounded-lg border border-green-100 flex flex-col items-center justify-center p-1 text-center animate-fade-in relative overflow-hidden">
-                                        <div className="text-green-500 mb-0.5">{getEventIcon(formatLabel(approvedAbsence))}</div>
-                                        <span className="text-[9px] font-bold text-green-700 leading-tight line-clamp-2">{formatLabel(approvedAbsence)}</span>
+                                    <div className={`w-full h-full rounded-lg border flex flex-col items-center justify-center p-1 text-center animate-fade-in relative overflow-hidden
+                                        ${approvedAbsence.typeId === RequestType.FREE_HOURS
+                                            ? 'bg-teal-50 border-teal-100'
+                                            : 'bg-green-50 border-green-100'}
+                                    `}>
+                                        <div className={approvedAbsence.typeId === RequestType.FREE_HOURS ? 'text-teal-500 mb-0.5' : 'text-green-500 mb-0.5'}>
+                                            {approvedAbsence.typeId === RequestType.FREE_HOURS
+                                                ? <Clock size={18} className="opacity-80"/>
+                                                : getEventIcon(formatLabel(approvedAbsence))
+                                            }
+                                        </div>
+                                        <span className={`text-[9px] font-bold leading-tight line-clamp-2 ${
+                                            approvedAbsence.typeId === RequestType.FREE_HOURS ? 'text-teal-700' : 'text-green-700'
+                                        }`}>
+                                            {approvedAbsence.typeId === RequestType.FREE_HOURS ? 'HL' : formatLabel(approvedAbsence)}
+                                        </span>
+                                        {approvedAbsence.typeId === RequestType.FREE_HOURS && (
+                                            <span className="text-[8px] text-teal-500 font-medium">{Math.abs(approvedAbsence.hours || 0)}h</span>
+                                        )}
                                     </div>
                                 )}
                                 {!holiday && !approvedAbsence && shift && (

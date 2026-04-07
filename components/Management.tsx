@@ -340,6 +340,8 @@ export const Approvals = ({ user, onViewRequest }: { user: User, onViewRequest: 
                                                   <div className="flex gap-1.5"><span className="px-2 py-0.5 rounded-lg font-black text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">+1 Día</span><span className="px-2 py-0.5 rounded-lg font-black text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">+4 Horas</span></div>
                                               ) : req.typeId === RequestType.OVERTIME_TO_DAYS ? (
                                                   <div className="flex gap-1.5"><span className="px-2 py-0.5 rounded-lg font-black text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">+{(Math.abs(req.hours || 0) / 8).toFixed(1)} Días</span><span className="px-2 py-0.5 rounded-lg font-black text-[9px] bg-rose-50 text-rose-600 border border-rose-100 uppercase">-{Math.abs(req.hours || 0)} Horas</span></div>
+                                              ) : req.typeId === RequestType.FREE_HOURS ? (
+                                                  <span className="px-2 py-0.5 rounded-lg font-black text-[9px] border uppercase bg-teal-50 text-teal-700 border-teal-100">-{Math.abs(req.hours || 0)} Horas</span>
                                               ) : store.isOvertimeRequest(req.typeId) ? (
                                                   <span className={`px-2 py-0.5 rounded-lg font-black text-[9px] border uppercase ${req.hours && req.hours > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>{req.hours && req.hours > 0 ? '+' : ''}{req.hours} Horas</span>
                                               ) : (

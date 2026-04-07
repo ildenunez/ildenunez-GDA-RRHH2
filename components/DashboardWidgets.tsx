@@ -1,7 +1,7 @@
 import React from 'react';
-import { User, RequestStatus, NewsPost, Role } from '../types';
+import { User, RequestStatus, NewsPost, Role, RequestType, LeaveRequest } from '../types';
 import { store } from '../services/store';
-import { Megaphone, Users, Clock, ChevronRight, CalendarClock } from 'lucide-react';
+import { Megaphone, Users, Clock, ChevronRight, CalendarClock, Paperclip, AlertTriangle } from 'lucide-react';
 
 export const EnRevisionWidget: React.FC<{ count: number }> = ({ count }) => (
   <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-card flex items-center justify-between border-l-4 border-l-brand-600">
@@ -41,7 +41,7 @@ export const MuroAnunciosWidget: React.FC<{ news: NewsPost[] }> = ({ news }) => 
   </div>
 );
 
-export const EstadoEquipoWidget: React.FC<{ users: User[] }> = ({ users }) => {
+export const EstadoEquipoWidget: React.FC<{ users: User[]; refresh?: number }> = ({ users, refresh }) => {
   const me = store.currentUser;
   const todayStr = new Date().toISOString().split('T')[0];
   
@@ -69,7 +69,7 @@ export const EstadoEquipoWidget: React.FC<{ users: User[] }> = ({ users }) => {
         absenceLabel: store.getTypeLabel(todayRequest.typeId).toUpperCase()
       };
     }).filter(Boolean).slice(0, 5) as any[];
-  }, [users, me, store.requests]);
+  }, [users, me, store.requests, refresh]);
 
   if (teammatesOnAbsence.length === 0) {
     return (
@@ -114,7 +114,7 @@ export const EstadoEquipoWidget: React.FC<{ users: User[] }> = ({ users }) => {
   );
 };
 
-export const EstadoEquipoProximaSemanaWidget: React.FC<{ users: User[] }> = ({ users }) => {
+export const EstadoEquipoProximaSemanaWidget: React.FC<{ users: User[]; refresh?: number }> = ({ users, refresh }) => {
   const me = store.currentUser;
   const today = new Date();
   const nextWeekStart = new Date(today);
@@ -152,7 +152,7 @@ export const EstadoEquipoProximaSemanaWidget: React.FC<{ users: User[] }> = ({ u
       }
     }
     return results.slice(0, 5);
-  }, [users, me, store.requests]);
+  }, [users, me, store.requests, refresh]);
 
   if (teammatesOnAbsence.length === 0) return null;
 
@@ -180,6 +180,99 @@ export const EstadoEquipoProximaSemanaWidget: React.FC<{ users: User[] }> = ({ u
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+// Widget: empleado ve sus ausencias justificadas sin documento adjunto
+export const JustificantesPendientesWidget: React.FC<{ onViewRequest: (req: LeaveRequest) => void; refresh?: number }> = ({ onViewRequest, refresh }) => {
+  const me = store.currentUser;
+  if (!me) return null;
+
+  const pending = React.useMemo(() => store.requests.filter(r =>
+    r.userId === me.id &&
+    r.typeId === RequestType.UNJUSTIFIED &&
+    r.status !== RequestStatus.REJECTED &&
+    !r.attachmentUrl &&
+    !r.justificanteExento
+  ), [store.requests, me.id, refresh]);
+
+  if (pending.length === 0) return null;
+
+  return (
+    <div className="bg-white p-6 rounded-3xl border border-orange-200 shadow-card border-l-4 border-l-orange-500">
+      <div className="flex items-center gap-2 mb-4">
+        <Paperclip size={14} className="text-orange-500" />
+        <h3 className="text-xs font-black text-slate-800 tracking-widest uppercase">Justificantes Pendientes</h3>
+        <span className="ml-auto bg-orange-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">{pending.length}</span>
+      </div>
+      <p className="text-[10px] text-slate-400 font-medium mb-4">Tienes ausencias justificadas sin documento adjunto.</p>
+      <div className="space-y-2">
+        {pending.slice(0, 3).map(r => (
+          <button
+            key={r.id}
+            onClick={() => onViewRequest(r)}
+            className="w-full flex items-center gap-2 bg-orange-50 hover:bg-orange-100 rounded-xl px-3 py-2 text-left transition-colors group"
+          >
+            <AlertTriangle size={12} className="text-orange-400 shrink-0" />
+            <span className="text-[11px] font-bold text-slate-700 flex-1 truncate">{new Date(r.startDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>
+            <ChevronRight size={12} className="text-orange-300 group-hover:text-orange-500 transition-colors" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Widget: supervisor/admin ve ausencias justificadas sin documento (de su/s departamentos)
+export const JustificantesPendientesEquipoWidget: React.FC<{ onViewRequest: (req: LeaveRequest) => void; refresh?: number }> = ({ onViewRequest, refresh }) => {
+  const me = store.currentUser;
+  if (!me || me.role === Role.WORKER) return null;
+
+  const myDeptIds = React.useMemo(() => me.role === Role.ADMIN
+    ? store.departments.map(d => d.id)
+    : store.departments.filter(d => d.supervisorIds.includes(me.id)).map(d => d.id),
+  [store.departments, me.id, refresh]);
+
+  const pending = React.useMemo(() => store.requests.filter(r => {
+    if (r.typeId !== RequestType.UNJUSTIFIED) return false;
+    if (r.status === RequestStatus.REJECTED) return false;
+    if (r.attachmentUrl) return false;
+    if (r.justificanteExento) return false;
+    const u = store.users.find(u => u.id === r.userId);
+    return u && myDeptIds.includes(u.departmentId);
+  }), [store.requests, myDeptIds, refresh]);
+
+  if (pending.length === 0) return null;
+
+  return (
+    <div className="bg-white p-6 rounded-3xl border border-orange-200 shadow-card border-l-4 border-l-orange-500">
+      <div className="flex items-center gap-2 mb-4">
+        <Paperclip size={14} className="text-orange-500" />
+        <h3 className="text-xs font-black text-slate-800 tracking-widest uppercase">Justif. Sin Documento</h3>
+        <span className="ml-auto bg-orange-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">{pending.length}</span>
+      </div>
+      <p className="text-[10px] text-slate-400 font-medium mb-4">Ausencias justificadas de tu equipo sin justificante adjunto.</p>
+      <div className="space-y-2">
+        {pending.slice(0, 4).map(r => {
+          const u = store.users.find(u => u.id === r.userId);
+          return (
+            <button
+              key={r.id}
+              onClick={() => onViewRequest(r)}
+              className="w-full flex items-center gap-2 bg-orange-50 hover:bg-orange-100 rounded-xl px-3 py-2 text-left transition-colors group"
+            >
+              <img src={u?.avatar} className="w-5 h-5 rounded-full object-cover shrink-0" />
+              <span className="text-[11px] font-bold text-slate-700 flex-1 truncate">{u?.name.split(' ')[0]}</span>
+              <span className="text-[10px] text-slate-400">{new Date(r.startDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span>
+              <ChevronRight size={12} className="text-orange-300 group-hover:text-orange-500 transition-colors shrink-0" />
+            </button>
+          );
+        })}
+        {pending.length > 4 && (
+          <p className="text-[10px] text-orange-400 font-bold text-center pt-1">+{pending.length - 4} más</p>
+        )}
       </div>
     </div>
   );

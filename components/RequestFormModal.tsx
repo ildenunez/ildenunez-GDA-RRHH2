@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, LeaveRequest, OvertimeUsage, RequestStatus, Role, RequestType } from '../types';
 import { store } from '../services/store';
-import { X, Clock, Loader2, User as UserIcon, CalendarDays, Gift, Archive, FileWarning } from 'lucide-react';
+import { X, Clock, Loader2, User as UserIcon, CalendarDays, Gift, Archive, FileWarning, Coffee } from 'lucide-react';
 
 interface RequestFormModalProps {
   onClose: () => void;
@@ -149,6 +149,7 @@ const RequestFormModal: React.FC<RequestFormModalProps> = ({ onClose, user, targ
   };
 
   const isConsumptionType = activeTab === 'overtime' && ![RequestType.OVERTIME_EARN, RequestType.WORKED_HOLIDAY].includes(typeId as RequestType);
+  const isFreeHours = typeId === RequestType.FREE_HOURS;
   const isWorkedHoliday = typeId === RequestType.WORKED_HOLIDAY;
   const isUnjustified = typeId === RequestType.UNJUSTIFIED;
   const currentLeaveType = absenceTypes.find(t => t.id === typeId);
@@ -189,6 +190,7 @@ const RequestFormModal: React.FC<RequestFormModalProps> = ({ onClose, user, targ
                  <select className="w-full p-3 bg-slate-50 border-slate-200 rounded-xl" value={typeId} onChange={e => { setTypeId(e.target.value); setUsageMap({}); setHours(0); }}>
                      <option value={RequestType.OVERTIME_EARN}>Registrar Horas Realizadas</option>
                      <option value={RequestType.WORKED_HOLIDAY}>Festivo Trabajado (+1 día / +4h)</option>
+                     <option value={RequestType.FREE_HOURS}>🕐 Horas Libres (entrada tarde / salida antes)</option>
                      <option value={RequestType.OVERTIME_SPEND_DAYS}>Canjear por Días Libres</option>
                      <option value={RequestType.OVERTIME_TO_DAYS}>Pasar horas a días (8h = 1 día)</option>
                      <option value={RequestType.OVERTIME_PAY}>Abono en Nómina</option>
@@ -217,8 +219,10 @@ const RequestFormModal: React.FC<RequestFormModalProps> = ({ onClose, user, targ
            )}
            
            <div className="grid grid-cols-2 gap-4">
-             <div className={`${(isWorkedHoliday || isUnjustified) ? 'col-span-2' : ''}`}>
-               <label className="block text-sm font-medium text-slate-700 mb-1">Fecha {isUnjustified ? 'de la Falta' : 'Inicio'}</label>
+             <div className={`${(isWorkedHoliday || isUnjustified || isFreeHours) ? 'col-span-2' : ''}`}>
+               <label className="block text-sm font-medium text-slate-700 mb-1">
+                 {isUnjustified ? 'Fecha de la Falta' : isFreeHours ? 'Día de las Horas Libres' : 'Fecha Inicio'}
+               </label>
                <input 
                     type="date" 
                     required 
@@ -240,10 +244,61 @@ const RequestFormModal: React.FC<RequestFormModalProps> = ({ onClose, user, targ
                     />
                </div>
              )}
-             {activeTab === 'overtime' && !isWorkedHoliday && (
+             {activeTab === 'overtime' && !isWorkedHoliday && !isFreeHours && (
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Total Horas</label><input type="number" step="0.5" required disabled={isConsumptionType} className="w-full p-3 border border-slate-200 rounded-xl font-bold" value={hours} onChange={e => setHours(parseFloat(e.target.value))} /></div>
              )}
            </div>
+
+           {isFreeHours && (
+               <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 flex items-center gap-4">
+                   <div className="bg-white p-2 rounded-full shadow-sm text-teal-600 shrink-0"><Coffee size={24} /></div>
+                   <div>
+                       <p className="text-xs text-teal-700 uppercase font-bold">Horas Libres</p>
+                       <p className="text-sm font-medium text-slate-800">Indica el día y cuantas horas usarás. Las horas se <strong>descuentan de tu saldo al crear</strong> la solicitud. Aparecerá como <strong className="text-teal-700">HL</strong> en el calendario cuando sea aprobada.</p>
+                   </div>
+               </div>
+           )}
+
+           {isFreeHours && !editingRequest && (
+               <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+                   <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Clock size={16} className="text-teal-500"/> Horas a usar de:</h4>
+                   <div className="mb-3">
+                       <label className="block text-sm font-medium text-slate-700 mb-1">Número de horas</label>
+                       <input type="number" step="0.5" min="0.5" required className="w-full p-3 border border-slate-200 rounded-xl font-bold" value={hours || ''} onChange={e => setHours(parseFloat(e.target.value) || 0)} placeholder="Ej: 2" />
+                   </div>
+                   {availableOvertime.length > 0 && (
+                       <>
+                           <p className="text-xs text-slate-500 mb-2">Trazabilidad (opcional): selecciona de qué registros se consumen:</p>
+                           <div className="max-h-40 overflow-y-auto space-y-2 pr-2">
+                               {availableOvertime.map(req => {
+                                   const remaining = (req.hours || 0) - (req.consumedHours || 0);
+                                   const isSelected = !!usageMap[req.id];
+                                   return (
+                                       <div key={req.id} className={`p-3 bg-white rounded-lg border ${isSelected ? 'border-teal-400 ring-1 ring-teal-100' : 'border-slate-200'}`}>
+                                           <div className="flex items-center gap-3">
+                                               <input type="checkbox" checked={isSelected} onChange={(e) => handleUsageChange(req, e.target.checked)} className="w-4 h-4 text-teal-600" />
+                                               <div className="flex-1 text-xs">
+                                                   <div className="flex justify-between font-bold text-slate-700">
+                                                       <span>{req.id === 'historical_balance' ? 'Saldo Histórico' : new Date(req.startDate).toLocaleDateString()}</span>
+                                                       <span>Disp: {remaining.toFixed(1)}h</span>
+                                                   </div>
+                                                   <div className="italic text-slate-500 truncate">{req.reason || 'Sin motivo'}</div>
+                                               </div>
+                                           </div>
+                                           {isSelected && (
+                                               <div className="mt-2 flex items-center gap-2">
+                                                   <label className="text-xs text-slate-500">Horas:</label>
+                                                   <input type="number" min="0.5" max={remaining} step="0.5" value={usageMap[req.id]} onChange={(e) => handleUsageChange(req, true, parseFloat(e.target.value))} className="w-16 p-1 border rounded" />
+                                               </div>
+                                           )}
+                                       </div>
+                                   );
+                               })}
+                           </div>
+                       </>
+                   )}
+               </div>
+           )}
 
            {isUnjustified && (
                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-4">

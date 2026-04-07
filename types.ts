@@ -34,7 +34,8 @@ export enum RequestType {
   WORKED_HOLIDAY = 'festivo_trabajado',
   UNJUSTIFIED = 'ausencia_justificable',
   ADJUSTMENT_DAYS = 'ajuste_dias',
-  ADJUSTMENT_OVERTIME = 'ajuste_horas_extra'
+  ADJUSTMENT_OVERTIME = 'ajuste_horas_extra',
+  FREE_HOURS = 'horas_libres'
 }
 
 export interface User {
@@ -107,6 +108,8 @@ export interface LeaveRequest {
   overtimeUsage?: OvertimeUsage[];
   isJustified?: boolean; 
   reportedToAdmin?: boolean;
+  attachmentUrl?: string;
+  justificanteExento?: boolean;
 }
 
 export interface Notification {

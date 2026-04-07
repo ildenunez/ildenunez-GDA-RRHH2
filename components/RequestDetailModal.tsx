@@ -1,7 +1,8 @@
 import React from 'react';
 import { LeaveRequest, RequestStatus, Role, RequestType } from '../types';
 import { store } from '../services/store';
-import { X, Printer, Calendar, Clock, FileText, CheckCircle, XCircle, AlertCircle, User as UserIcon, MessageSquare, UserCheck, Save, ChevronRight } from 'lucide-react';
+import { X, Printer, Calendar, Clock, FileText, CheckCircle, XCircle, AlertCircle, User as UserIcon, MessageSquare, UserCheck, Save, ChevronRight, Paperclip, Upload, ExternalLink, Loader2, Trash2, ShieldCheck } from 'lucide-react';
+import DeleteRequestModal from './DeleteRequestModal';
 
 interface RequestDetailModalProps {
   request: LeaveRequest;
@@ -30,6 +31,15 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
   const untracedHours = Math.max(0, (request.hours || 0) - totalTracedHours);
   const [editedHours, setEditedHours] = React.useState(request.hours || 0);
   const [isProcessing, setIsProcessing] = React.useState(false);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [attachmentUrl, setAttachmentUrl] = React.useState(request.attachmentUrl || '');
+  const [justificanteExento, setJustificanteExento] = React.useState(!!request.justificanteExento);
+  const [isTogglingExento, setIsTogglingExento] = React.useState(false);
+  const [saveStatus, setSaveStatus] = React.useState<'idle' | 'saved' | 'error'>('idle');
+  const [showDeleteModal, setShowDeleteModal] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const isAdmin = store.currentUser?.role === Role.ADMIN;
 
   const canManage = store.currentUser?.role === Role.ADMIN || store.currentUser?.role === Role.SUPERVISOR;
   const isPending = request.status === RequestStatus.PENDING;
@@ -60,306 +70,443 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
       }
   };
 
+  const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setIsUploading(true);
+      try {
+          const url = await store.uploadAttachment(request.id, file);
+          if (url) {
+              setAttachmentUrl(url);
+          } else {
+              alert('Error al subir el archivo. Comprueba que el bucket "justificantes" existe en Supabase.');
+          }
+      } catch (err) {
+          alert('Error inesperado al subir el archivo.');
+      } finally {
+          setIsUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+  };
+
+  const handleToggleExento = async () => {
+      setIsTogglingExento(true);
+      setSaveStatus('idle');
+      const newVal = !justificanteExento;
+      try {
+          await store.setJustificanteExento(request.id, newVal);
+          setJustificanteExento(newVal);
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 2500);
+      } catch {
+          setSaveStatus('error');
+          setTimeout(() => setSaveStatus('idle'), 3000);
+      } finally {
+          setIsTogglingExento(false);
+      }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/60 flex justify-center items-start z-[150] p-4 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:items-start print:static print:block">
+    <>
+      <div className="fixed inset-0 bg-black/60 flex justify-center items-start z-[150] p-4 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:items-start print:static print:block">
       <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl animate-fade-in-up my-8 print:my-0 print:shadow-none print:w-full print:max-w-none print:rounded-none">
-        
-        {/* Header (No Print Actions) */}
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 print:hidden">
-            <h2 className="font-bold text-slate-700">Detalle de Solicitud</h2>
-            <div className="flex gap-2">
-                <button onClick={handlePrint} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors shadow-sm text-slate-700">
-                    <Printer size={16}/> Imprimir Informe
-                </button>
-                <button onClick={onClose} className="p-1.5 hover:bg-slate-200 rounded-full text-slate-500">
-                    <X size={20}/>
-                </button>
-            </div>
-        </div>
 
-        {/* Report Content */}
-        <div className="p-8 print:p-0">
-            {/* Header del Informe */}
-            <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-slate-100">
-                <div className="flex items-center gap-4">
-                    <div className="w-20 h-20 bg-white border border-slate-200 flex items-center justify-center rounded-xl p-2 print:border-none print:p-0">
-                         <img src="https://termosycalentadoresgranada.com/wp-content/uploads/2025/08/https___cdn.evbuc_.com_images_677236879_73808960223_1_original.png" alt="Logo" className="w-full h-full object-contain" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-900">Informe de Solicitud</h1>
-                        <p className="text-slate-500 text-sm">Portal de RRHH - GdA</p>
-                        <p className="text-slate-400 text-[10px] mt-1 font-mono uppercase tracking-tighter">ID: {request.id}</p>
-                    </div>
-                </div>
-                <div className="text-right">
-                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold border
-                        ${request.status === RequestStatus.APPROVED ? 'bg-green-50 text-green-700 border-green-200' : 
-                          request.status === RequestStatus.REJECTED ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}
-                    `}>
-                        {request.status === RequestStatus.APPROVED && <CheckCircle size={14}/>}
-                        {request.status === RequestStatus.REJECTED && <XCircle size={14}/>}
-                        {request.status === RequestStatus.PENDING && <AlertCircle size={14}/>}
-                        {request.status}
-                    </div>
-                    <p className="text-xs text-slate-400 mt-2">Creado: {new Date(request.createdAt).toLocaleDateString()}</p>
-                </div>
-            </div>
+      {/* Header (No Print Actions) */}
+      <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 print:hidden">
+          <h2 className="font-bold text-slate-700">Detalle de Solicitud</h2>
+          <div className="flex gap-2">
+              {canManage && (
+                  <button
+                      onClick={() => setShowDeleteModal(true)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white border border-rose-200 rounded-lg text-sm hover:bg-rose-50 hover:border-rose-400 transition-colors shadow-sm text-rose-500 font-semibold"
+                      title="Eliminar solicitud"
+                  >
+                      <Trash2 size={15}/> Eliminar
+                  </button>
+              )}
+              <button onClick={handlePrint} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors shadow-sm text-slate-700">
+                  <Printer size={16}/> Imprimir Informe
+              </button>
+              <button onClick={onClose} className="p-1.5 hover:bg-slate-200 rounded-full text-slate-500">
+                  <X size={20}/>
+              </button>
+          </div>
+      </div>
 
-            {/* Datos del Empleado */}
-            <div className="mb-8">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Datos del Empleado</h3>
-                <div className="grid grid-cols-2 gap-6">
-                    <div>
-                        <span className="block text-xs text-slate-500">Nombre Completo</span>
-                        <span className="font-semibold text-slate-800 flex items-center gap-2"><UserIcon size={14}/> {user?.name}</span>
-                    </div>
-                    <div>
-                        <span className="block text-xs text-slate-500">Departamento</span>
-                        <span className="font-semibold text-slate-800">{dept?.name || '-'}</span>
-                    </div>
-                    <div className="col-span-2">
-                        <span className="block text-xs text-slate-500">Email</span>
-                        <span className="font-semibold text-slate-800">{user?.email}</span>
-                    </div>
-                </div>
-            </div>
+      {/* Report Content */}
+      <div className="p-8 print:p-0">
+          {/* Header del Informe */}
+          <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-slate-100">
+              <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 bg-white border border-slate-200 flex items-center justify-center rounded-xl p-2 print:border-none print:p-0">
+                       <img src="https://termosycalentadoresgranada.com/wp-content/uploads/2025/08/https___cdn.evbuc_.com_images_677236879_73808960223_1_original.png" alt="Logo" className="w-full h-full object-contain" />
+                  </div>
+                  <div>
+                      <h1 className="text-2xl font-bold text-slate-900">Informe de Solicitud</h1>
+                      <p className="text-slate-500 text-sm">Portal de RRHH - GdA</p>
+                      <p className="text-slate-400 text-[10px] mt-1 font-mono uppercase tracking-tighter">ID: {request.id}</p>
+                  </div>
+              </div>
+              <div className="text-right">
+                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold border
+                      ${request.status === RequestStatus.APPROVED ? 'bg-green-50 text-green-700 border-green-200' : 
+                        request.status === RequestStatus.REJECTED ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}
+                  `}>
+                      {request.status === RequestStatus.APPROVED && <CheckCircle size={14}/>}
+                      {request.status === RequestStatus.REJECTED && <XCircle size={14}/>}
+                      {request.status === RequestStatus.PENDING && <AlertCircle size={14}/>}
+                      {request.status}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">Creado: {new Date(request.createdAt).toLocaleDateString()}</p>
+              </div>
+          </div>
 
-            {/* Detalles de la Solicitud */}
-            <div className="mb-8 bg-slate-50 p-6 rounded-xl border border-slate-100 print:bg-white print:border-black">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">{store.getTypeLabel(request.typeId)}</h3>
-                
-                <div className="grid grid-cols-2 gap-y-4">
-                    <div>
-                        <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><Calendar size={14}/> Fecha Inicio</span>
-                        <span className="font-medium text-slate-900">{new Date(request.startDate).toLocaleDateString()}</span>
-                    </div>
-                    {request.endDate && (
-                        <div>
-                            <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><Calendar size={14}/> Fecha Fin</span>
-                            <span className="font-medium text-slate-900">{new Date(request.endDate).toLocaleDateString()}</span>
-                        </div>
-                    )}
-                    {request.hours !== undefined && (
-                        <div>
-                            <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><Clock size={14}/> Total Horas</span>
-                            {isPending && canManage && isOvertimeAdd ? (
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="number" 
-                                        step="0.5"
-                                        value={editedHours}
-                                        onChange={(e) => setEditedHours(parseFloat(e.target.value) || 0)}
-                                        className="w-24 px-3 py-1.5 border-2 border-indigo-200 rounded-lg font-mono font-bold text-slate-900 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 outline-none"
-                                    />
-                                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 uppercase tracking-tighter">Editando</span>
-                                </div>
-                            ) : (
-                                <span className="font-mono font-bold text-slate-900">{request.hours}h</span>
-                            )}
-                        </div>
-                    )}
-                </div>
+          {/* Datos del Empleado */}
+          <div className="mb-8">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Datos del Empleado</h3>
+              <div className="grid grid-cols-2 gap-6">
+                  <div>
+                      <span className="block text-xs text-slate-500">Nombre Completo</span>
+                      <span className="font-semibold text-slate-800 flex items-center gap-2"><UserIcon size={14}/> {user?.name}</span>
+                  </div>
+                  <div>
+                      <span className="block text-xs text-slate-500">Departamento</span>
+                      <span className="font-semibold text-slate-800">{dept?.name || '-'}</span>
+                  </div>
+                  <div className="col-span-2">
+                      <span className="block text-xs text-slate-500">Email</span>
+                      <span className="font-semibold text-slate-800">{user?.email}</span>
+                  </div>
+              </div>
+          </div>
 
-                {request.reason && (
-                    <div className="mt-4 pt-4 border-t border-slate-200">
-                        <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><FileText size={14}/> Motivo / Comentario Empleado</span>
-                        <p className="text-slate-700 italic">"{request.reason}"</p>
-                    </div>
-                )}
-            </div>
+          {/* Detalles de la Solicitud */}
+          <div className="mb-8 bg-slate-50 p-6 rounded-xl border border-slate-100 print:bg-white print:border-black">
+              <h3 className="text-lg font-bold text-slate-800 mb-4">{store.getTypeLabel(request.typeId)}</h3>
+              
+              <div className="grid grid-cols-2 gap-y-4">
+                  <div>
+                      <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><Calendar size={14}/> Fecha Inicio</span>
+                      <span className="font-medium text-slate-900">{new Date(request.startDate).toLocaleDateString()}</span>
+                  </div>
+                  {request.endDate && (
+                      <div>
+                          <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><Calendar size={14}/> Fecha Fin</span>
+                          <span className="font-medium text-slate-900">{new Date(request.endDate).toLocaleDateString()}</span>
+                      </div>
+                  )}
+                  {request.hours !== undefined && (
+                      <div>
+                          <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><Clock size={14}/> Total Horas</span>
+                          {isPending && canManage && isOvertimeAdd ? (
+                              <div className="flex items-center gap-2">
+                                  <input 
+                                      type="number" 
+                                      step="0.5"
+                                      value={editedHours}
+                                      onChange={(e) => setEditedHours(parseFloat(e.target.value) || 0)}
+                                      className="w-24 px-3 py-1.5 border-2 border-indigo-200 rounded-lg font-mono font-bold text-slate-900 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 outline-none"
+                                  />
+                                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 uppercase tracking-tighter">Editando</span>
+                              </div>
+                          ) : (
+                              <span className="font-mono font-bold text-slate-900">{request.hours}h</span>
+                          )}
+                      </div>
+                  )}
+              </div>
 
-            {/* Impacto en Saldo */}
-            <div className="mb-8">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <div className="h-1 w-1 bg-blue-400 rounded-full"></div> Impacto en Saldo del Empleado
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Cálculo de impacto Vacaciones */}
-                    {(() => {
-                        const { daysDelta } = store.getDeltasForRequest(request.typeId, request.startDate, request.endDate || '', request.hours || 0);
-                        const isApproved = request.status === RequestStatus.APPROVED;
-                        const isReward = request.typeId === RequestType.OVERTIME_TO_DAYS;
-                        const current = user?.daysAvailable || 0;
+              {request.reason && (
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                      <span className="flex items-center gap-2 text-sm text-slate-500 mb-1"><FileText size={14}/> Motivo / Comentario Empleado</span>
+                      <p className="text-slate-700 italic">"{request.reason}"</p>
+                  </div>
+              )}
+          </div>
 
-                        // Los días de vacaciones normales y ajustes se restan/suman al CREAR la solicitud (si no es RECHAZADA)
-                        const wasApplied = request.status !== RequestStatus.REJECTED && (daysDelta !== 0);
-                        const before = wasApplied ? current - daysDelta : current;
-                        
-                        // El beneficio de días extras (OVERTIME_TO_DAYS) se suma solo al APROBAR
-                        const pendingRewardVal = (isReward && request.status === RequestStatus.PENDING) ? (Math.abs(request.hours || 0) / 8) : 0;
-                        const after = wasApplied ? current + pendingRewardVal : current + daysDelta + pendingRewardVal;
-                        
-                        if (daysDelta === 0 && !isReward) return null;
+          {/* Justificante - solo para Ausencias Justificables */}
+          {request.typeId === RequestType.UNJUSTIFIED && (
+              <div className="mb-8 bg-orange-50/50 p-6 rounded-xl border border-orange-100 print:hidden">
+                  <h3 className="text-xs font-bold text-orange-500 uppercase tracking-wider mb-4 border-b border-orange-100 pb-2 flex items-center gap-2">
+                      <Paperclip size={14}/> Justificante
+                  </h3>
+                  {attachmentUrl ? (
+                      <div className="space-y-3">
+                          <div className="flex items-center gap-3 bg-white rounded-xl border border-orange-100 p-3">
+                              <div className="p-2 bg-orange-100 text-orange-600 rounded-lg">
+                                  <FileText size={20}/>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-slate-800">Justificante adjunto</p>
+                                  <p className="text-xs text-slate-400 truncate">{attachmentUrl}</p>
+                              </div>
+                              <a
+                                  href={attachmentUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-bold hover:bg-orange-600 transition-colors"
+                              >
+                                  <ExternalLink size={12}/> Ver
+                              </a>
+                          </div>
+                          {attachmentUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) && (
+                              <img
+                                  src={attachmentUrl}
+                                  alt="Justificante"
+                                  className="w-full max-h-48 object-contain rounded-xl border border-orange-100 bg-white"
+                              />
+                          )}
+                          <button
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={isUploading}
+                              className="flex items-center gap-2 text-xs text-orange-600 hover:text-orange-700 font-medium disabled:opacity-50"
+                          >
+                              <Upload size={12}/> Reemplazar justificante
+                          </button>
+                      </div>
+                  ) : (
+                      <div className="text-center py-6">
+                          <Paperclip size={32} className="mx-auto text-orange-200 mb-3"/>
+                          <p className="text-sm font-medium text-slate-600 mb-1">No hay justificante adjunto</p>
+                          <p className="text-xs text-slate-400 mb-4">Puede adjuntar un PDF o imagen del justificante</p>
+                          <button
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={isUploading}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-xl text-sm font-bold hover:bg-orange-600 transition-colors shadow-sm disabled:opacity-50"
+                          >
+                              {isUploading ? <Loader2 size={16} className="animate-spin"/> : <Upload size={16}/>}
+                              {isUploading ? 'Subiendo...' : 'Adjuntar Justificante'}
+                          </button>
+                      </div>
+                  )}
+                  {/* Admin: exento de justificante */}
+                  {isAdmin && (
+                      <div className={`mt-4 pt-4 border-t flex flex-col gap-2 ${justificanteExento ? 'border-emerald-100' : 'border-orange-100'}`}>
+                          <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2">
+                                  <ShieldCheck size={14} className={justificanteExento ? 'text-emerald-500' : 'text-slate-300'} />
+                                  <div>
+                                      <p className="text-xs font-bold text-slate-700">Exento de justificante</p>
+                                      <p className="text-[10px] text-slate-400 leading-tight">Al activar, no aparecerá como pendiente de documento</p>
+                                  </div>
+                              </div>
+                              <button
+                                  onClick={handleToggleExento}
+                                  disabled={isTogglingExento}
+                                  className={`relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-50 shrink-0 ${justificanteExento ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                              >
+                                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${justificanteExento ? 'translate-x-5' : 'translate-x-0'}`} />
+                              </button>
+                          </div>
+                          {saveStatus === 'saved' && (
+                              <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5 text-[10px] font-bold animate-fade-in">
+                                  <ShieldCheck size={11}/> Guardado correctamente
+                              </div>
+                          )}
+                          {saveStatus === 'error' && (
+                              <div className="text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5">
+                                  ⚠ Error al guardar. Asegúrate de que la columna <code className="font-mono">justificante_exento</code> existe en Supabase.
+                              </div>
+                          )}
+                      </div>
+                  )}
+                  <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,image/*"
+                      className="hidden"
+                      onChange={handleAttachmentUpload}
+                  />
+              </div>
+          )}
 
-                        return (
-                            <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-4 flex flex-col gap-3">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-orange-600 uppercase">Vacaciones</span>
-                                    <span className="text-xs font-bold text-orange-400">{Math.abs(daysDelta || (Math.abs(request.hours || 0) / 8)).toFixed(1)}d</span>
-                                </div>
-                                <div className="flex items-center justify-between bg-white/60 rounded-xl p-2 px-3 border border-orange-100/50">
-                                    <div>
-                                        <p className="text-[8px] font-black text-slate-400 uppercase">Saldo Previo</p>
-                                        <p className="text-sm font-black text-slate-600">{before.toFixed(1)}d</p>
-                                    </div>
-                                    <ChevronRight size={14} className="text-orange-300 mx-1" />
-                                    <div className="text-right">
-                                        <p className="text-[8px] font-black text-slate-400 uppercase">Resultado</p>
-                                        <p className="text-sm font-black text-orange-600">{after.toFixed(1)}d</p>
-                                    </div>
-                                </div>
-                                <p className="text-[9px] text-orange-400 font-medium italic">
-                                    {daysDelta < 0 ? '* Descontado al crear la solicitud' : '* Se sumará al aprobar la solicitud'}
-                                </p>
-                            </div>
-                        );
-                    })()}
+          {/* Impacto en Saldo */}
+          <div className="mb-8">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <div className="h-1 w-1 bg-blue-400 rounded-full"></div> Impacto en Saldo del Empleado
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Cálculo de impacto Vacaciones */}
+                  {(() => {
+                      const { daysDelta } = store.getDeltasForRequest(request.typeId, request.startDate, request.endDate || '', request.hours || 0);
+                      const isReward = request.typeId === RequestType.OVERTIME_TO_DAYS;
+                      const current = user?.daysAvailable || 0;
+                      const wasApplied = request.status !== RequestStatus.REJECTED && (daysDelta !== 0);
+                      const before = wasApplied ? current - daysDelta : current;
+                      const pendingRewardVal = (isReward && request.status === RequestStatus.PENDING) ? (Math.abs(request.hours || 0) / 8) : 0;
+                      const after = wasApplied ? current + pendingRewardVal : current + daysDelta + pendingRewardVal;
+                      if (daysDelta === 0 && !isReward) return null;
+                      return (
+                          <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-4 flex flex-col gap-3">
+                              <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-black text-orange-600 uppercase">Vacaciones</span>
+                                  <span className="text-xs font-bold text-orange-400">{Math.abs(daysDelta || (Math.abs(request.hours || 0) / 8)).toFixed(1)}d</span>
+                              </div>
+                              <div className="flex items-center justify-between bg-white/60 rounded-xl p-2 px-3 border border-orange-100/50">
+                                  <div>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase">Saldo Previo</p>
+                                      <p className="text-sm font-black text-slate-600">{before.toFixed(1)}d</p>
+                                  </div>
+                                  <ChevronRight size={14} className="text-orange-300 mx-1" />
+                                  <div className="text-right">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase">Resultado</p>
+                                      <p className="text-sm font-black text-orange-600">{after.toFixed(1)}d</p>
+                                  </div>
+                              </div>
+                              <p className="text-[9px] text-orange-400 font-medium italic">
+                                  {daysDelta < 0 ? '* Descontado al crear la solicitud' : '* Se sumará al aprobar la solicitud'}
+                              </p>
+                          </div>
+                      );
+                  })()}
 
-                    {/* Cálculo de impacto Horas Extra */}
-                    {(() => {
-                        const { hoursDelta } = store.getDeltasForRequest(request.typeId, request.startDate, request.endDate || '', request.hours || 0);
-                        const isEarning = [RequestType.OVERTIME_EARN, RequestType.WORKED_HOLIDAY].includes(request.typeId as RequestType);
-                        const current = user?.overtimeHours || 0;
+                  {/* Cálculo de impacto Horas Extra */}
+                  {(() => {
+                      const { hoursDelta } = store.getDeltasForRequest(request.typeId, request.startDate, request.endDate || '', request.hours || 0);
+                      const isEarning = [RequestType.OVERTIME_EARN, RequestType.WORKED_HOLIDAY].includes(request.typeId as RequestType);
+                      const current = user?.overtimeHours || 0;
+                      const wasApplied = request.status !== RequestStatus.REJECTED && (hoursDelta !== 0);
+                      const before = wasApplied ? current - hoursDelta : current;
+                      const pendingEarnVal = (isEarning && request.status === RequestStatus.PENDING) ? Math.abs(request.hours || 0) : 0;
+                      const after = wasApplied ? current + pendingEarnVal : current + hoursDelta + pendingEarnVal;
+                      if (hoursDelta === 0 && !isEarning) return null;
+                      return (
+                          <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex flex-col gap-3">
+                              <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-black text-blue-600 uppercase">Horas Extra</span>
+                                  <span className="text-xs font-bold text-blue-400">{Math.abs(request.hours || 0).toFixed(1)}h</span>
+                              </div>
+                              <div className="flex items-center justify-between bg-white/60 rounded-xl p-2 px-3 border border-blue-100/50">
+                                  <div>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase">Saldo Previo</p>
+                                      <p className="text-sm font-black text-slate-600">{before.toFixed(1)}h</p>
+                                  </div>
+                                  <ChevronRight size={14} className="text-blue-300 mx-1" />
+                                  <div className="text-right">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase">Resultado</p>
+                                      <p className="text-sm font-black text-blue-600">{after.toFixed(1)}h</p>
+                                  </div>
+                              </div>
+                              <p className="text-[9px] text-blue-400 font-medium italic">
+                                  {hoursDelta < 0 ? '* Descontado al crear la solicitud' : '* Se sumará al aprobar la solicitud'}
+                              </p>
+                          </div>
+                      );
+                  })()}
+              </div>
+          </div>
 
-                        // La mayoría de operaciones (Ajustes, Gastos de horas) se restan/suman al CREAR la solicitud (si no es RECHAZADA)
-                        const wasApplied = request.status !== RequestStatus.REJECTED && (hoursDelta !== 0);
-                        const before = wasApplied ? current - hoursDelta : current;
-                        
-                        // Los ingresos (Registro, Festivo) se suman solo al APROBAR
-                        const pendingEarnVal = (isEarning && request.status === RequestStatus.PENDING) ? Math.abs(request.hours || 0) : 0;
-                        const after = wasApplied ? current + pendingEarnVal : current + hoursDelta + pendingEarnVal;
+          {/* Validación y Observaciones Admin */}
+          {(request.status !== RequestStatus.PENDING) && (
+              <div className="mb-8 bg-blue-50/50 p-6 rounded-xl border border-blue-100">
+                  <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-4 border-b border-blue-100 pb-2">Información de Validación</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                          <span className="block text-xs text-blue-500 mb-1">Responsable de la acción</span>
+                          <div className="flex items-center gap-2 font-bold text-slate-800">
+                              <div className="p-1 bg-blue-100 text-blue-600 rounded">
+                                  <UserCheck size={14}/>
+                              </div>
+                              {approver ? approver.name : 'Administración / Sistema'}
+                          </div>
+                      </div>
+                      {request.adminComment && (
+                          <div className="col-span-2 mt-2">
+                              <span className="flex items-center gap-2 text-xs font-bold text-blue-500 mb-2">
+                                  <MessageSquare size={14}/> Observaciones de la validación:
+                              </span>
+                              <p className="text-slate-700 font-medium italic bg-white p-3 rounded-lg border border-blue-100">
+                                  "{request.adminComment}"
+                              </p>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          )}
 
-                        if (hoursDelta === 0 && !isEarning) return null;
+          {/* Trazabilidad de Horas (Si aplica) */}
+          {((usageDetails && usageDetails.length > 0) || untracedHours > 0) && (
+              <div className="mb-8">
+                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Trazabilidad de Horas Consumidas</h3>
+                   <table className="w-full text-sm text-left">
+                       <thead className="bg-slate-100 text-slate-600 print:bg-slate-50">
+                           <tr>
+                               <th className="p-2 rounded-l-lg">Fecha Origen</th>
+                               <th className="p-2">Motivo Origen</th>
+                               <th className="p-2 text-right rounded-r-lg">Horas Usadas</th>
+                           </tr>
+                       </thead>
+                       <tbody className="divide-y divide-slate-100">
+                           {usageDetails.map((u, i) => (
+                               <tr key={i}>
+                                   <td className="p-2">{u.sourceDate ? new Date(u.sourceDate).toLocaleDateString() : 'N/A'}</td>
+                                   <td className="p-2 text-slate-500 italic">{u.sourceReason || '-'}</td>
+                                   <td className="p-2 text-right font-mono font-bold">{u.hoursUsed}h</td>
+                               </tr>
+                           ))}
+                           {untracedHours > 0 && (
+                               <tr className="bg-blue-50/30">
+                                   <td className="p-2 text-blue-600 font-medium italic">Histórico</td>
+                                   <td className="p-2 text-slate-500 italic text-xs">Saldo acumulado anterior o ajustes de administración</td>
+                                   <td className="p-2 text-right font-mono font-bold text-blue-700">{untracedHours}h</td>
+                               </tr>
+                           )}
+                       </tbody>
+                       <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
+                           <tr>
+                               <td colSpan={2} className="p-2 text-right text-slate-600 uppercase text-[10px]">Suma Total del Desglose:</td>
+                               <td className="p-2 text-right font-mono text-slate-900">{(totalTracedHours + untracedHours)}h</td>
+                           </tr>
+                       </tfoot>
+                   </table>
+              </div>
+          )}
+          
+          {/* Acciones para Admin (No Print) */}
+          {canManage && isPending && (
+              <div className="mt-12 flex flex-col md:flex-row gap-4 pt-8 border-t border-slate-200 print:hidden">
+                  <button 
+                      disabled={isProcessing}
+                      onClick={() => handleAction(RequestStatus.APPROVED)} 
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                  >
+                      <CheckCircle size={20}/>
+                      {isOvertimeAdd && editedHours !== request.hours ? 'Actualizar y Aprobar' : 'Aprobar Solicitud'}
+                  </button>
+                  <button 
+                      disabled={isProcessing}
+                      onClick={() => handleAction(RequestStatus.REJECTED)} 
+                      className="bg-white border-2 border-slate-200 text-slate-400 font-bold px-8 py-4 rounded-2xl hover:border-rose-500 hover:text-rose-500 hover:bg-rose-50 transition-all disabled:opacity-50"
+                  >
+                      Rechazar
+                  </button>
+              </div>
+          )}
 
-                        return (
-                            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex flex-col gap-3">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[10px] font-black text-blue-600 uppercase">Horas Extra</span>
-                                    <span className="text-xs font-bold text-blue-400">{Math.abs(request.hours || 0).toFixed(1)}h</span>
-                                </div>
-                                <div className="flex items-center justify-between bg-white/60 rounded-xl p-2 px-3 border border-blue-100/50">
-                                    <div>
-                                        <p className="text-[8px] font-black text-slate-400 uppercase">Saldo Previo</p>
-                                        <p className="text-sm font-black text-slate-600">{before.toFixed(1)}h</p>
-                                    </div>
-                                    <ChevronRight size={14} className="text-blue-300 mx-1" />
-                                    <div className="text-right">
-                                        <p className="text-[8px] font-black text-slate-400 uppercase">Resultado</p>
-                                        <p className="text-sm font-black text-blue-600">{after.toFixed(1)}h</p>
-                                    </div>
-                                </div>
-                                <p className="text-[9px] text-blue-400 font-medium italic">
-                                    {hoursDelta < 0 ? '* Descontado al crear la solicitud' : '* Se sumará al aprobar la solicitud'}
-                                </p>
-                            </div>
-                        );
-                    })()}
-                </div>
-            </div>
+          {/* Footer Firma */}
+          <div className="mt-12 pt-8 border-t border-slate-200 print:flex hidden justify-between">
+              <div className="text-center">
+                  <div className="h-16 border-b border-slate-400 w-48 mb-2"></div>
+                  <p className="text-xs text-slate-500">Firma Empleado</p>
+              </div>
+              <div className="text-center">
+                  <div className="h-16 border-b border-slate-400 w-48 mb-2"></div>
+                  <p className="text-xs text-slate-500">Firma Responsable</p>
+              </div>
+          </div>
 
-            {/* Validación y Observaciones Admin */}
-            {(request.status !== RequestStatus.PENDING) && (
-                <div className="mb-8 bg-blue-50/50 p-6 rounded-xl border border-blue-100">
-                    <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-4 border-b border-blue-100 pb-2">Información de Validación</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <span className="block text-xs text-blue-500 mb-1">Responsable de la acción</span>
-                            <div className="flex items-center gap-2 font-bold text-slate-800">
-                                <div className="p-1 bg-blue-100 text-blue-600 rounded">
-                                    <UserCheck size={14}/>
-                                </div>
-                                {approver ? approver.name : 'Administración / Sistema'}
-                            </div>
-                        </div>
-                        {request.adminComment && (
-                            <div className="col-span-2 mt-2">
-                                <span className="flex items-center gap-2 text-xs font-bold text-blue-500 mb-2">
-                                    <MessageSquare size={14}/> Observaciones de la validación:
-                                </span>
-                                <p className="text-slate-700 font-medium italic bg-white p-3 rounded-lg border border-blue-100">
-                                    "{request.adminComment}"
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Trazabilidad de Horas (Si aplica) */}
-            {((usageDetails && usageDetails.length > 0) || untracedHours > 0) && (
-                <div className="mb-8">
-                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Trazabilidad de Horas Consumidas</h3>
-                     <table className="w-full text-sm text-left">
-                         <thead className="bg-slate-100 text-slate-600 print:bg-slate-50">
-                             <tr>
-                                 <th className="p-2 rounded-l-lg">Fecha Origen</th>
-                                 <th className="p-2">Motivo Origen</th>
-                                 <th className="p-2 text-right rounded-r-lg">Horas Usadas</th>
-                             </tr>
-                         </thead>
-                         <tbody className="divide-y divide-slate-100">
-                             {usageDetails.map((u, i) => (
-                                 <tr key={i}>
-                                     <td className="p-2">{u.sourceDate ? new Date(u.sourceDate).toLocaleDateString() : 'N/A'}</td>
-                                     <td className="p-2 text-slate-500 italic">{u.sourceReason || '-'}</td>
-                                     <td className="p-2 text-right font-mono font-bold">{u.hoursUsed}h</td>
-                                 </tr>
-                             ))}
-                             {/* Fila para completar las horas que vienen del saldo histórico */}
-                             {untracedHours > 0 && (
-                                 <tr className="bg-blue-50/30">
-                                     <td className="p-2 text-blue-600 font-medium italic">Histórico</td>
-                                     <td className="p-2 text-slate-500 italic text-xs">Saldo acumulado anterior o ajustes de administración</td>
-                                     <td className="p-2 text-right font-mono font-bold text-blue-700">{untracedHours}h</td>
-                                 </tr>
-                             )}
-                         </tbody>
-                         <tfoot className="bg-slate-50 font-bold border-t border-slate-200">
-                             <tr>
-                                 <td colSpan={2} className="p-2 text-right text-slate-600 uppercase text-[10px]">Suma Total del Desglose:</td>
-                                 <td className="p-2 text-right font-mono text-slate-900">{(totalTracedHours + untracedHours)}h</td>
-                             </tr>
-                         </tfoot>
-                     </table>
-                </div>
-            )}
-            
-            {/* Acciones para Admin (No Print) */}
-            {canManage && isPending && (
-                <div className="mt-12 flex flex-col md:flex-row gap-4 pt-8 border-t border-slate-200 print:hidden">
-                    <button 
-                        disabled={isProcessing}
-                        onClick={() => handleAction(RequestStatus.APPROVED)} 
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-                    >
-                        <CheckCircle size={20}/>
-                        {isOvertimeAdd && editedHours !== request.hours ? 'Actualizar y Aprobar' : 'Aprobar Solicitud'}
-                    </button>
-                    <button 
-                        disabled={isProcessing}
-                        onClick={() => handleAction(RequestStatus.REJECTED)} 
-                        className="bg-white border-2 border-slate-200 text-slate-400 font-bold px-8 py-4 rounded-2xl hover:border-rose-500 hover:text-rose-500 hover:bg-rose-50 transition-all disabled:opacity-50"
-                    >
-                        Rechazar
-                    </button>
-                </div>
-            )}
-
-            {/* Footer Firma */}
-            <div className="mt-12 pt-8 border-t border-slate-200 print:flex hidden justify-between">
-                <div className="text-center">
-                    <div className="h-16 border-b border-slate-400 w-48 mb-2"></div>
-                    <p className="text-xs text-slate-500">Firma Empleado</p>
-                </div>
-                <div className="text-center">
-                    <div className="h-16 border-b border-slate-400 w-48 mb-2"></div>
-                    <p className="text-xs text-slate-500">Firma Responsable</p>
-                </div>
-            </div>
-
-        </div>
       </div>
     </div>
+    </div>
+
+    {showDeleteModal && (
+      <DeleteRequestModal
+        request={request}
+        onClose={() => setShowDeleteModal(false)}
+        onSuccess={onClose}
+      />
+    )}
+    </>
   );
 };
 

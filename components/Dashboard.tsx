@@ -14,7 +14,7 @@ import {
   Edit2,
   Trash2,
 } from 'lucide-react';
-import { EnRevisionWidget, MuroAnunciosWidget, EstadoEquipoWidget, EstadoEquipoProximaSemanaWidget } from './DashboardWidgets';
+import { EnRevisionWidget, MuroAnunciosWidget, EstadoEquipoWidget, EstadoEquipoProximaSemanaWidget, JustificantesPendientesWidget, JustificantesPendientesEquipoWidget } from './DashboardWidgets';
 
 interface DashboardProps {
   user: User;
@@ -289,9 +289,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onNewRequest, 
       {/* Right Sidebar Widgets */}
       <div className="lg:col-span-4 space-y-8">
         <EnRevisionWidget count={requests.filter(r => r.status === RequestStatus.PENDING).length} />
+        <JustificantesPendientesWidget onViewRequest={onViewRequest} refresh={refresh} />
+        <JustificantesPendientesEquipoWidget onViewRequest={onViewRequest} refresh={refresh} />
         <MuroAnunciosWidget news={news} />
-        <EstadoEquipoWidget users={teamUsers} />
-        <EstadoEquipoProximaSemanaWidget users={teamUsers} />
+        <EstadoEquipoWidget users={teamUsers} refresh={refresh} />
+        <EstadoEquipoProximaSemanaWidget users={teamUsers} refresh={refresh} />
       </div>
     </div>
   );

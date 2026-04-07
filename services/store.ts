@@ -62,6 +62,7 @@ class Store {
       [RequestType.UNJUSTIFIED]: 'Ausencia Justificada',
       [RequestType.ADJUSTMENT_DAYS]: 'Regularización Días (Admin)',
       [RequestType.ADJUSTMENT_OVERTIME]: 'Regularización Horas (Admin)',
+      [RequestType.FREE_HOURS]: 'Horas Libres',
     };
     const dynamic = this.config.leaveTypes.find(t => t.id === typeId);
     if (dynamic) return dynamic.label;
@@ -125,7 +126,9 @@ class Store {
         startDate: (r.start_date || '').trim(), endDate: (r.end_date || '').trim(), hours: r.hours, reason: r.reason,
         status: (r.status || '').trim(), createdAt: r.created_at, adminComment: r.admin_comment,
         resolvedBy: r.resolved_by ? String(r.resolved_by).trim() : undefined,
-        consumedHours: Number(r.consumed_hours || 0), overtimeUsage: r.overtime_usage || []
+        consumedHours: Number(r.consumed_hours || 0), overtimeUsage: r.overtime_usage || [],
+        attachmentUrl: r.attachment_url || undefined,
+        justificanteExento: !!r.justificante_exento
       }));
       this.config.news = nw.map((n: any) => ({
         id: String(n.id),
@@ -262,7 +265,7 @@ class Store {
         const typeConfig = this.config.leaveTypes.find(t => t.id === typeId);
         if (typeConfig?.subtractsDays) daysDelta = -this.calcAbsenceDays(startDate, endDate);
     } else {
-        if ([RequestType.OVERTIME_SPEND_DAYS, RequestType.OVERTIME_PAY, RequestType.OVERTIME_TO_DAYS].includes(typeId as RequestType)) {
+        if ([RequestType.OVERTIME_SPEND_DAYS, RequestType.OVERTIME_PAY, RequestType.OVERTIME_TO_DAYS, RequestType.FREE_HOURS].includes(typeId as RequestType)) {
             hoursDelta = -Math.abs(hours || 0);
             // El día de OVERTIME_TO_DAYS no se suma en el Delta base (Pendiente), se suma al Aprobar
         }
@@ -419,7 +422,7 @@ class Store {
     }
     return [];
   }
-  isOvertimeRequest(t: string) { return [RequestType.OVERTIME_EARN, RequestType.OVERTIME_SPEND_DAYS, RequestType.OVERTIME_TO_DAYS, RequestType.OVERTIME_PAY, RequestType.WORKED_HOLIDAY, RequestType.ADJUSTMENT_OVERTIME].includes(t as RequestType); }
+  isOvertimeRequest(t: string) { return [RequestType.OVERTIME_EARN, RequestType.OVERTIME_SPEND_DAYS, RequestType.OVERTIME_TO_DAYS, RequestType.OVERTIME_PAY, RequestType.WORKED_HOLIDAY, RequestType.ADJUSTMENT_OVERTIME, RequestType.FREE_HOURS].includes(t as RequestType); }
   getRequestConflicts(r: LeaveRequest) {
     const u = this.users.find(x => x.id === r.userId);
     if (!u) return [];
@@ -511,6 +514,35 @@ class Store {
     await this.refresh();
   }
   async repairOvertimeIntegrity() { await this.refresh(); }
+
+  async uploadAttachment(requestId: string, file: File): Promise<string | null> {
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `${requestId}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('justificantes')
+        .upload(path, file, { upsert: true });
+      if (uploadError) {
+        console.error('Error uploading attachment:', uploadError);
+        return null;
+      }
+      const { data: urlData } = supabase.storage.from('justificantes').getPublicUrl(path);
+      const publicUrl = urlData?.publicUrl || null;
+      if (publicUrl) {
+        await supabase.from('requests').update({ attachment_url: publicUrl }).eq('id', requestId);
+        await this.refresh();
+      }
+      return publicUrl;
+    } catch (e) {
+      console.error('Exception uploading attachment:', e);
+      return null;
+    }
+  }
+
+  async setJustificanteExento(requestId: string, exento: boolean): Promise<void> {
+    await supabase.from('requests').update({ justificante_exento: exento }).eq('id', requestId);
+    await this.refresh();
+  }
 }
 
 export const store = new Store();
