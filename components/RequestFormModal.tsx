@@ -138,7 +138,7 @@ const RequestFormModal: React.FC<RequestFormModalProps> = ({ onClose, user, targ
     }
 
     // FORZAR SIGNO NEGATIVO PARA TIPOS DE CONSUMO
-    const isConsumption = [RequestType.OVERTIME_SPEND_DAYS, RequestType.OVERTIME_PAY, RequestType.OVERTIME_TO_DAYS].includes(typeId as RequestType);
+    const isConsumption = [RequestType.OVERTIME_SPEND_DAYS, RequestType.OVERTIME_PAY, RequestType.OVERTIME_TO_DAYS, RequestType.FREE_HOURS].includes(typeId as RequestType);
     const finalHoursValue = isConsumption ? -Math.abs(hours) : hours;
 
     const reqData = { typeId, startDate, endDate, hours: finalHoursValue, reason, overtimeUsage: finalOvertimeUsage, isJustified: false, reportedToAdmin: false };

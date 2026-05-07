@@ -1242,38 +1242,202 @@ export const AbsenceQueryManager = () => {
 
 // Mantenimiento
 export const MaintenanceManager = () => {
-    const [isRepairing, setIsRepairing] = useState(false);
+    const [selectedUserId, setSelectedUserId] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [comparison, setComparison] = useState<{
+        current: { days: number, hours: number },
+        expected: { days: number, hours: number }
+    } | null>(null);
 
-    const handleRepair = async () => {
-        if (confirm('¿Deseas sincronizar la trazabilidad de horas extra? Esto corregirá registros antiguos marcándolos como consumidos si están vinculados a solicitudes aprobadas.')) {
-            setIsRepairing(true);
-            await store.repairOvertimeIntegrity();
-            setIsRepairing(false);
+    const handleUserSelect = (uid: string) => {
+        setSelectedUserId(uid);
+        if (!uid) {
+            setComparison(null);
+            return;
+        }
+
+        const user = store.users.find(u => u.id === uid);
+        if (user) {
+            const expected = store.getExpectedBalance(uid);
+            setComparison({
+                current: { 
+                    days: Number(user.daysAvailable || 0), 
+                    hours: Number(user.overtimeHours || 0) 
+                },
+                expected: { 
+                    days: Number(expected.daysAvailable || 0), 
+                    hours: Number(expected.overtimeHours || 0) 
+                }
+            });
         }
     };
 
+    const handleSync = async () => {
+        if (!selectedUserId || !comparison) return;
+        
+        setIsProcessing(true);
+        try {
+            await store.recalculateUserBalance(selectedUserId);
+            // Refresh local comparison state
+            const updatedUser = store.users.find(u => u.id === selectedUserId);
+            if (updatedUser) {
+                setComparison({
+                    ...comparison,
+                    current: { 
+                        days: Number(updatedUser.daysAvailable || 0), 
+                        hours: Number(updatedUser.overtimeHours || 0) 
+                    }
+                });
+            }
+            alert('¡Sincronización completada con éxito!');
+        } catch (e) {
+            console.error(e);
+            alert('Error durante la sincronización');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const hasDiff = comparison && (
+        Math.abs(comparison.current.days - comparison.expected.days) > 0.01 || 
+        Math.abs(comparison.current.hours - comparison.expected.hours) > 0.01
+    );
+
     return (
-        <div className="space-y-8 animate-fade-in">
-            <div className="bg-blue-900 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 opacity-10"><Database size={120} /></div>
-                <h4 className="text-xl font-bold mb-4">Punto de Restauración y Backup</h4>
-                <div className="flex gap-4">
-                    <button className="bg-white/10 hover:bg-white/20 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all"><Download size={18}/> Exportar JSON</button>
-                    <button className="bg-white/10 hover:bg-white/20 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all"><Upload size={18}/> Importar Backup</button>
+        <div className="space-y-8 animate-fade-in pb-20">
+            {/* Header / Info */}
+            <div className="bg-slate-900 text-white p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-10 opacity-10 rotate-12"><ShieldCheck size={180} /></div>
+                <div className="relative z-10 max-w-2xl">
+                    <h4 className="text-3xl font-black mb-4 tracking-tighter">Centro de Integridad y Mantenimiento</h4>
+                    <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                        Esta herramienta permite auditar el saldo de los trabajadores comparando su estado actual en base de datos con la trazabilidad histórica de sus solicitudes.
+                    </p>
                 </div>
             </div>
 
-            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><RotateCcw size={20} className="text-orange-500"/> Integridad de Datos</h4>
-                <p className="text-sm text-slate-500 mb-6">Si detectas que a algunos empleados les siguen apareciendo registros de horas extra que ya deberían estar consumidos, usa esta herramienta para sincronizar la base de datos.</p>
-                <button 
-                    onClick={handleRepair} 
-                    disabled={isRepairing}
-                    className="bg-orange-50 text-orange-600 border border-orange-100 hover:bg-orange-100 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50"
-                >
-                    {isRepairing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCcw size={18}/>}
-                    Sincronizar Trazabilidad de Horas
-                </button>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Selector */}
+                <div className="lg:col-span-1 bg-white p-8 rounded-3xl border border-slate-100 shadow-sm flex flex-col gap-6">
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Seleccionar Trabajador</label>
+                        <select 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all appearance-none cursor-pointer"
+                            value={selectedUserId}
+                            onChange={(e) => handleUserSelect(e.target.value)}
+                        >
+                            <option value="">Elegir empleado...</option>
+                            {store.users.sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                                <option key={u.id} value={u.id}>{u.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {!selectedUserId && (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-slate-100 rounded-2xl">
+                            <Users size={40} className="text-slate-200 mb-4" />
+                            <p className="text-xs text-slate-400 font-medium italic">Selecciona un empleado para auditar su balance de horas y vacaciones.</p>
+                        </div>
+                    )}
+
+                    {selectedUserId && comparison && (
+                        <div className="animate-fade-in space-y-6">
+                             <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3">
+                                <AlertTriangle size={20} className="text-amber-500 shrink-0" />
+                                <p className="text-[10px] text-amber-700 font-bold leading-relaxed">
+                                    RECUERDA: El recálculo parte de 0. Si el usuario tuvo un saldo inicial manual no registrado como petición, este podría perderse.
+                                </p>
+                            </div>
+                            
+                            <button 
+                                onClick={handleSync}
+                                disabled={isProcessing || !hasDiff}
+                                className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                                    hasDiff 
+                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 hover:scale-[1.02] active:scale-95' 
+                                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                }`}
+                            >
+                                {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCcw size={18}/>}
+                                {hasDiff ? 'Sincronizar Datos' : 'Datos en Sincronía'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Auditoria / Diff */}
+                <div className="lg:col-span-2 space-y-6">
+                    {selectedUserId && comparison ? (
+                        <div className="animate-fade-in grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Vacaciones */}
+                            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm overflow-hidden relative group">
+                                <div className={`absolute top-0 right-0 p-4 opacity-5 ${Math.abs(comparison.current.days - comparison.expected.days) > 0 ? 'text-orange-500' : 'text-emerald-500'}`}>
+                                    <Palmtree size={80} />
+                                </div>
+                                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 border-b pb-2">Auditoría de Vacaciones</h5>
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-xs font-bold text-slate-500">Saldo Actual en BBDD</span>
+                                        <span className="text-2xl font-black text-slate-800">{comparison.current.days.toFixed(1)}d</span>
+                                    </div>
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-xs font-bold text-slate-500">Saldo Según Trazabilidad</span>
+                                        <span className="text-2xl font-black text-slate-800">{comparison.expected.days.toFixed(1)}d</span>
+                                    </div>
+                                    <div className={`mt-4 p-4 rounded-2xl flex justify-between items-center ${comparison.current.days === comparison.expected.days ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Diferencia Detectada</span>
+                                        <span className="text-lg font-black">{(comparison.expected.days - comparison.current.days).toFixed(1)}d</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Horas Extra */}
+                            <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm overflow-hidden relative group">
+                                <div className={`absolute top-0 right-0 p-4 opacity-5 ${Math.abs(comparison.current.hours - comparison.expected.hours) > 0 ? 'text-orange-500' : 'text-emerald-500'}`}>
+                                    <Timer size={80} />
+                                </div>
+                                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 border-b pb-2">Auditoría de Horas Extra</h5>
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-xs font-bold text-slate-500">Saldo Actual en BBDD</span>
+                                        <span className="text-2xl font-black text-slate-800">{comparison.current.hours.toFixed(1)}h</span>
+                                    </div>
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-xs font-bold text-slate-500">Saldo Según Trazabilidad</span>
+                                        <span className="text-2xl font-black text-slate-800">{comparison.expected.hours.toFixed(1)}h</span>
+                                    </div>
+                                    <div className={`mt-4 p-4 rounded-2xl flex justify-between items-center ${comparison.current.hours === comparison.expected.hours ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Diferencia Detectada</span>
+                                        <span className="text-lg font-black">{(comparison.expected.hours - comparison.current.hours).toFixed(1)}h</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="h-full min-h-[300px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center p-12 text-center">
+                            <Activity size={60} className="text-slate-200 mb-6" />
+                            <h5 className="text-lg font-bold text-slate-400 mb-2">Esperando selección...</h5>
+                            <p className="text-sm text-slate-400 max-w-sm">
+                                Una vez elijas un trabajador en el panel de la izquierda, se habilitará el informe comparativo detallado de sus bolsas de horas y vacaciones.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Punto de Restauración */}
+            <div className="bg-indigo-900 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700"><Database size={120} /></div>
+                <h4 className="text-xl font-bold mb-4 flex items-center gap-3"><Download size={24} className="text-indigo-400"/> Punto de Restauración y Backup Global</h4>
+                <div className="flex flex-wrap gap-4 relative z-10">
+                    <button className="bg-white/10 hover:bg-white/20 px-8 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all border border-white/10 active:scale-95"><Download size={18}/> Exportar Base de Datos (JSON)</button>
+                    <button className="bg-white/10 hover:bg-white/20 px-8 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all border border-white/10 active:scale-95"><Upload size={18}/> Importar Backup</button>
+                    <div className="flex-1"></div>
+                    <div className="px-6 py-3 bg-black/20 rounded-2xl backdrop-blur-md border border-white/5 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-200">Sistema Activo y Asegurado</span>
+                    </div>
+                </div>
             </div>
         </div>
     );

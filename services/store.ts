@@ -247,15 +247,28 @@ class Store {
   }
 
   async _adjustUserBalance(uid: string, daysDelta: number, hoursDelta: number) {
-    const u = this.users.find(x => x.id === uid);
-    if (!u) return;
-    const currentDays = u.daysAvailable || 0;
-    const currentHours = u.overtimeHours || 0;
-    const { error } = await supabase.from('users').update({
+    // 1. Fetch current balance directly from DB to avoid stale data (race condition prevention)
+    const { data: userData, error: fetchError } = await supabase
+      .from('users')
+      .select('days_available, overtime_hours')
+      .eq('id', uid)
+      .single();
+
+    if (fetchError || !userData) {
+      console.error("Error fetching balance for adjustment:", fetchError);
+      return;
+    }
+
+    const currentDays = Number(userData.days_available ?? 0);
+    const currentHours = Number(userData.overtime_hours ?? 0);
+
+    // 2. Update with the new calculated balance
+    const { error: updateError } = await supabase.from('users').update({
         days_available: currentDays + daysDelta,
         overtime_hours: currentHours + hoursDelta
     }).eq('id', uid);
-    if (error) console.error("Error adjusting balance:", error);
+
+    if (updateError) console.error("Error adjusting balance:", updateError);
   }
 
   getDeltasForRequest(typeId: string, startDate: string, endDate: string, hours: number) {
